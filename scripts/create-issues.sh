@@ -28,7 +28,7 @@ for n in $(seq 0 10); do
     gh label create "stage-$n" --repo "$REPO" --color "1D76DB" --force >/dev/null 2>&1 || true
 done
 
-echo "→ milestone «$MILESTONE»"
+echo "→ milestone «${MILESTONE}»"
 if ! gh api "repos/$REPO/milestones?state=all&per_page=100" --jq '.[].title' | grep -Fxq "$MILESTONE"; then
     desc="$(cat .github/milestone.md)"
     gh api -X POST "repos/$REPO/milestones" \
