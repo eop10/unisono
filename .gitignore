@@ -21,9 +21,9 @@ __pycache__/
 *.jks
 *.keystore
 keystore.properties
-gen/android/app/build/
-gen/android/.gradle/
-gen/android/local.properties
+**/gen/android/app/build/
+**/gen/android/.gradle/
+**/gen/android/local.properties
 
 # macOS / IDE
 .DS_Store
