@@ -1,0 +1,387 @@
+/* Переопределения темы alabaster для документов с широкими таблицами,
+   JSON-примерами и диаграммами. */
+
+/* --- Таблицы -------------------------------------------------------------- */
+
+div.table-wrapper {
+    overflow-x: auto;
+    margin: 1.1em 0;
+    border: 1px solid #e3e7ec;
+    border-radius: 4px;
+}
+
+table.docutils {
+    font-size: 0.86em;
+    line-height: 1.45;
+    border: 0;
+    margin: 0;
+    width: 100%;
+}
+
+table.docutils th,
+table.docutils td {
+    hyphens: none;
+    word-break: normal;
+    /* break-word, а не anywhere: иначе «Q13» и короткие коды рвутся посередине,
+       хотя столбцу хватило бы места при переносе по словам. */
+    overflow-wrap: break-word;
+    padding: 6px 10px;
+    vertical-align: top;
+}
+
+table.docutils thead th {
+    background: #f4f7f9;
+    border-bottom: 1px solid #d6dee5;
+    font-weight: 600;
+    text-align: left;
+    white-space: normal;
+}
+
+table.docutils tbody tr:nth-child(even) {
+    background: #fbfcfd;
+}
+
+table.docutils td > p,
+table.docutils th > p {
+    margin: 0;
+}
+
+/* Первый столбец таблиц-справочников держим узким */
+table.docutils td:first-child {
+    hyphens: none;
+}
+
+/* --- Код ------------------------------------------------------------------ */
+
+div.highlight {
+    margin: 1.1em 0;
+    border-radius: 4px;
+}
+
+div.highlight pre {
+    font-size: 0.82em;
+    line-height: 1.45;
+    padding: 12px 14px;
+    border-radius: 4px;
+}
+
+code.literal {
+    background: #f2f5f7;
+    border: 1px solid #e4e9ed;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 0.88em;
+    overflow-wrap: anywhere;
+}
+
+/* --- Диаграммы ------------------------------------------------------------ */
+
+figure {
+    margin: 1.6em 0;
+    text-align: center;
+}
+
+figure img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #e8ecf0;
+    border-radius: 4px;
+    background: #fff;
+    padding: 10px;
+}
+
+figcaption,
+figcaption p {
+    font-size: 0.84em;
+    color: #5d6b78;
+    margin-top: 0.5em;
+    text-align: center;
+}
+
+/* --- Блоки-предупреждения MyST ------------------------------------------- */
+
+.admonition {
+    border-radius: 4px;
+    border-left-width: 4px;
+    font-size: 0.93em;
+}
+
+.admonition > .admonition-title {
+    font-weight: 600;
+}
+
+div.warning.admonition,
+div.caution.admonition {
+    background: #fff8f0;
+}
+
+div.note.admonition,
+div.important.admonition {
+    background: #f4f9fd;
+}
+
+div.seealso.admonition {
+    background: #f5fbf7;
+}
+
+/* --- Заголовки ------------------------------------------------------------ */
+
+h1 {
+    font-size: 1.75em;
+    letter-spacing: -0.01em;
+}
+
+h2 {
+    margin-top: 1.9em;
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid #eceff2;
+    font-size: 1.28em;
+}
+
+h3 {
+    font-size: 1.08em;
+}
+
+/* --- Содержание в сайдбаре ------------------------------------------------ */
+
+div.sphinxsidebar h3 {
+    font-size: 0.95em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7a88;
+}
+
+div.sphinxsidebar ul {
+    line-height: 1.6;
+    font-size: 0.92em;
+}
+
+div.sphinxsidebar input {
+    border: 1px solid #d6dee5;
+    border-radius: 3px;
+    padding: 4px 6px;
+}
+
+/* --- Разное --------------------------------------------------------------- */
+
+div.body p,
+div.body li {
+    line-height: 1.62;
+    /* Автопереносы в alabaster рвут русские слова и технические термины
+       («поэто-му», «Type-Script»), поэтому переносим только вручную. */
+    hyphens: manual;
+    -webkit-hyphens: manual;
+}
+
+em {
+    font-style: italic;
+}
+
+/* --- Печать и PDF --------------------------------------------------------- */
+
+/* Используется только при печати/сохранении в PDF из браузера:
+   альбомная A4, потому что в документе много широких таблиц. */
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 10mm 10mm 14mm 10mm;
+    }
+
+    div.sphinxsidebar,
+    div.related,
+    div.relations,
+    div.footer,
+    a.headerlink,
+    #searchbox {
+        display: none !important;
+    }
+
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+    }
+
+    div.bodywrapper,
+    div.body {
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: none !important;
+        font-size: 9.5pt;
+        /* Arial даёт корректный ToUnicode в PDF от Chrome: без этого поиск
+           и копирование кириллицы в готовом PDF ломаются. */
+        font-family: Arial, Helvetica, sans-serif !important;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5 {
+        font-family: Arial, Helvetica, sans-serif !important;
+    }
+
+    h1 {
+        font-size: 17pt;
+        page-break-before: always;
+        page-break-after: avoid;
+    }
+
+    h1:first-of-type {
+        page-break-before: avoid;
+    }
+
+    h2 {
+        font-size: 12.5pt;
+        page-break-after: avoid;
+    }
+
+    h3 {
+        font-size: 10.5pt;
+        page-break-after: avoid;
+    }
+
+    p,
+    li {
+        orphans: 3;
+        widows: 3;
+    }
+
+    div.table-wrapper {
+        overflow: visible !important;
+        border: none !important;
+    }
+
+    table.docutils {
+        font-size: 7.6pt;
+        width: 100% !important;
+    }
+
+    table.docutils th,
+    table.docutils td {
+        padding: 3px 5px;
+    }
+
+    /* Шапка таблицы повторяется на каждой странице */
+    thead {
+        display: table-header-group;
+    }
+
+    tr,
+    td,
+    th {
+        page-break-inside: avoid;
+    }
+
+    pre {
+        font-size: 6.8pt;
+        page-break-inside: avoid;
+        white-space: pre-wrap;
+    }
+
+    code.literal {
+        font-size: 0.85em;
+    }
+
+    figure {
+        page-break-inside: avoid;
+        margin: 4mm 0;
+    }
+
+    figcaption,
+    figcaption p {
+        font-size: 7.5pt;
+        margin-top: 2mm;
+    }
+
+    /* Высокие диаграммы не помещаются на альбомную A4 целиком, а без
+       ограничения Chrome переносит их на следующую страницу и оставляет
+       пустую. Ограничиваем высоту, ширина считается по пропорции. */
+    figure img {
+        page-break-inside: avoid;
+        max-width: 100%;
+        max-height: 152mm;
+        width: auto;
+    }
+
+    figure img {
+        border: none;
+        padding: 0;
+    }
+
+    .admonition {
+        page-break-inside: avoid;
+    }
+
+    a {
+        color: #000 !important;
+        text-decoration: none !important;
+    }
+}
+
+/* --- Промежуточные ширины -------------------------------------------------- */
+
+/* alabaster переключается в «мобильную» раскладку уже на 1200 px: сайдбар
+   становится тёмной плашкой во всю ширину и уводит текст вниз. На ноутбуке
+   с окном 1100–1200 px это выглядит как другая страница, поэтому в этом
+   диапазоне оставляем обычную раскладку с боковым меню. */
+@media screen and (min-width: 1001px) and (max-width: 1200px) {
+    body {
+        margin: 0;
+        padding: 0;
+    }
+
+    div.document,
+    .document {
+        width: auto;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    div.documentwrapper {
+        float: left;
+        width: 100%;
+        margin: 0;
+        background: none;
+    }
+
+    div.bodywrapper {
+        margin: 0 0 0 300px;
+    }
+
+    div.body {
+        padding: 0 30px;
+    }
+
+    div.sphinxsidebar {
+        position: fixed;
+        float: none;
+        width: 300px;
+        margin: 0;
+        padding: 0;
+        background: none;
+        color: inherit;
+        display: block;
+    }
+
+    div.sphinxsidebar h3,
+    div.sphinxsidebar h4,
+    div.sphinxsidebar p,
+    div.sphinxsidebar h3 a {
+        color: #000;
+    }
+
+    div.sphinxsidebar a {
+        color: #444;
+    }
+
+    div.sphinxsidebar p.logo {
+        display: block;
+    }
+
+    div.footer {
+        display: block;
+        width: auto;
+        margin: 20px 30px 30px;
+    }
+}

@@ -1,0 +1,39 @@
+%% Компонентная схема приложения (Rust + Tauri).
+%% Детализация конвейера — на рис. 2 (pipeline.mmd).
+%% Рендер: tools/render-diagrams.sh, результат: source/diagrams/architecture.png
+flowchart TB
+    Mic["Микрофон устройства"]
+
+    subgraph PLAT["tuner-audio · trait AudioSource"]
+        direction LR
+        Mac["macOS · cpal<br/>CoreAudio · f32"]
+        Win["Windows · cpal<br/>WASAPI · f32"]
+        Lin["Linux · cpal<br/>ALSA · f32"]
+        And["Android · oboe<br/>AAudio · f32"]
+    end
+
+    subgraph CORE["tuner-core · Rust, без I/O"]
+        direction LR
+        Ingest["Приём<br/>rtrb · LevelGate"]
+        Det["PitchDetector<br/>NSDF · clarity"]
+        Post["Сглаживание и маппинг<br/>Smoothing · StringMatcher · NoteMath"]
+        Engine["TunerEngine<br/>TunerState"]
+        Ingest --> Det --> Post --> Engine
+    end
+
+    subgraph APP["src-tauri · Tauri 2"]
+        direction LR
+        Bridge["commands<br/>+ Channel&lt;TunerState&gt;"]
+    end
+
+    subgraph UIL["ui · Svelte + TypeScript"]
+        direction LR
+        Screen["TunerScreen"]
+        SetS["Settings"]
+        Pres["Presets"]
+    end
+
+    Mic --> PLAT
+    PLAT -- "f32-кадры" --> CORE
+    CORE -- "watch" --> APP
+    APP -- "IPC, 30–60 Гц" --> UIL

@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unisono — интерактивный прототип</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  /* ================= токены ================= */
+  .device{
+    --bg:#0E0F10; --panel:#141618; --panel2:#1A1D20; --line:#2A2D30; --line2:#3A3E42;
+    --text:#E8E6E1; --muted:#8A8F94; --dim:#5C6268; --brass:#C8A15A; --red:#C4553B;
+    --shadow: 0 30px 60px rgba(0,0,0,.28); --btn-text:#141414;
+  }
+  .device.light{
+    --bg:#F3F0EA; --panel:#FFFFFF; --panel2:#EFEAE1; --line:#D8D2C6; --line2:#C4BDB0;
+    --text:#14161A; --muted:#6E6A62; --dim:#9A948A; --brass:#8A6A2F; --red:#B4452C;
+    --shadow: 0 30px 60px rgba(60,50,35,.18); --btn-text:#FBF8F2;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{background:#E4E0D8; color:#16181A; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+  button{font:inherit; color:inherit; background:none; border:0; cursor:pointer;}
+  input,select{font:inherit;}
+
+  .stage{min-height:100vh; display:flex; align-items:flex-start; justify-content:center; gap:44px; padding:38px 44px 48px; flex-wrap:wrap;}
+  .col{display:flex; flex-direction:column; align-items:center; gap:14px;}
+  .caption{font:500 10.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.09em;
+           text-transform:uppercase; color:#6E6A62; text-align:center;}
+
+  /* ================= устройство ================= */
+  .device{position:relative; box-shadow:var(--shadow); flex:none;}
+  .device.phone{width:390px; height:844px; background:#050607; border-radius:46px; padding:10px;}
+  .device.phone .app{border-radius:38px;}
+  .device.desktop .island{display:none;}
+  .device.desktop .handle{display:none;}
+  .note.empty{font-size:54px !important; color:var(--dim); letter-spacing:0;}
+  .cents.empty{color:var(--dim);}
+  .centslbl.hidden{visibility:hidden;}
+  .status.idle .dot{background:var(--dim);}
+  .device.desktop{width:900px; height:640px; background:var(--bg); border-radius:12px; overflow:hidden;
+                  display:flex; flex-direction:column;}
+  .island{position:absolute; top:12px; left:50%; transform:translateX(-50%); width:96px; height:26px;
+          background:#000; border-radius:14px; z-index:20;}
+  .titlebar{height:38px; flex:none; display:flex; align-items:center; padding:0 14px; gap:8px;
+            background:#0B0C0D; border-bottom:1px solid #1B1D1F; z-index:5;}
+  .lights{display:flex; gap:7px;}
+  .lights i{width:11px; height:11px; border-radius:50%;}
+  .lights i:nth-child(1){background:#FF5F57} .lights i:nth-child(2){background:#FEBC2E}
+  .lights i:nth-child(3){background:#28C840}
+  .wintitle{flex:1; text-align:center; font:500 10px/1 ui-monospace,Menlo,monospace; letter-spacing:.12em;
+            color:#5C6268; text-transform:uppercase; margin-right:48px;}
+
+  .app{position:relative; display:flex; flex-direction:column; height:100%; background:var(--bg);
+       color:var(--text); overflow:hidden;}
+  .device.phone .app{height:100%;}
+  .device.desktop .app{flex:1;}
+
+  /* ================= тюнер ================= */
+  .topbar{display:flex; align-items:center; justify-content:space-between; padding:26px 24px 0;}
+  .device.desktop .topbar{padding:18px 40px 0;}
+  .chip{display:inline-flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid transparent;
+        border-radius:7px; color:var(--muted); transition:border-color .15s, color .15s;}
+  .chip:hover{border-color:var(--line); color:var(--text);}
+  .chip:focus-visible{outline:2px solid var(--brass); outline-offset:2px;}
+  .chip .k{font:500 10px/1 ui-monospace,Menlo,monospace; letter-spacing:.12em; text-transform:uppercase;}
+  .chip .v{font:500 10px/1 ui-monospace,Menlo,monospace; letter-spacing:.08em; color:var(--text);}
+  .chip.a4 .v{color:var(--brass);}
+  #a4unit{text-transform:none; letter-spacing:.06em;}
+
+  .top-right{display:flex; align-items:center; gap:6px;}
+  .icon{width:30px; height:30px; display:flex; align-items:center; justify-content:center;
+        border-radius:6px; color:var(--muted);}
+  .icon:hover{background:var(--panel2); color:var(--text);}
+  .icon:focus-visible{outline:2px solid var(--brass); outline-offset:2px;}
+  .big-type .note{font-size:224px;}
+  .device.desktop .big-type .note{font-size:158px;}
+  .chev{width:7px; height:7px; border-right:1.2px solid currentColor; border-bottom:1.2px solid currentColor;
+        transform:rotate(45deg) translate(-1px,-1px);}
+
+  .tuner{flex:1; display:flex; flex-direction:column; padding:0 24px 20px; min-height:0;}
+  .device.desktop .tuner{padding:0 40px 18px;}
+
+  .center{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:0;}
+  .notewrap{position:relative; line-height:.8;}
+  .note{font-family:"Roboto Flex","Helvetica Neue",sans-serif; font-weight:400; color:var(--text);
+        font-size:200px; letter-spacing:-.03em; line-height:.8; display:block;
+        transition:opacity .2s, font-variation-settings .18s ease;}
+  .device.desktop .note{font-size:142px;}
+  .oct{position:absolute; top:-2px; right:-24px; font-family:"JetBrains Mono",monospace; font-size:24px;
+       color:var(--muted); letter-spacing:0;}
+  .device.desktop .oct{font-size:18px; right:-20px;}
+
+  .freq{display:flex; align-items:baseline; gap:7px; margin-top:16px; color:var(--text);
+        font-family:"JetBrains Mono",monospace; font-variant-numeric:tabular-nums;}
+  .freq .val{font-size:18px;}
+  .freq .unit,.freq .target,.freq .sep{font-size:10px; color:var(--dim); letter-spacing:.05em;}
+  .device.desktop .freq{margin-top:12px;}
+  .device.desktop .freq .val{font-size:16px;}
+
+  .gauge{display:block; width:100%; height:88px; margin-top:26px;}
+  .device.desktop .gauge{margin-top:20px;}
+
+  .centsrow{display:flex; align-items:flex-end; gap:9px; margin-top:4px;}
+  .cents{font-family:"JetBrains Mono",monospace; font-variant-numeric:tabular-nums; font-size:44px;
+         line-height:1; letter-spacing:-.02em; color:var(--text); transition:color .2s, opacity .2s;}
+  .device.desktop .cents{font-size:34px;}
+  .centslbl{font:400 9px/1.5 ui-monospace,Menlo,monospace; letter-spacing:.14em; color:var(--muted);
+            text-transform:uppercase; padding-bottom:4px;}
+  .in-tune .cents,.in-tune .centslbl{color:var(--brass);}
+
+  .strings{display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:26px;}
+  .device.desktop .strings{margin-top:18px;}
+  .str{position:relative; width:42px; height:42px; border:1px solid var(--line); border-radius:6px;
+       display:flex; align-items:center; justify-content:center; font:500 12px/1 ui-monospace,Menlo,monospace;
+       color:var(--muted); transition:color .15s, border-color .15s;}
+  .device.desktop .str{width:38px; height:38px;}
+  .str:hover{color:var(--text); border-color:var(--line2);}
+  .str.on{color:var(--brass); border-color:color-mix(in srgb, var(--brass) 40%, var(--line));}
+  .str.on::after{content:""; position:absolute; left:8px; right:8px; bottom:-1px; height:2px; background:var(--brass);}
+
+  .bottom{display:flex; align-items:center; gap:12px; height:44px; margin-top:14px;}
+  .level{display:flex; align-items:flex-end; gap:3px; height:16px; flex:none;}
+  .level i{width:3px; background:var(--line2); border-radius:1px;}
+  .level i:nth-child(1){height:5px} .level i:nth-child(2){height:8px}
+  .level i:nth-child(3){height:11px} .level i:nth-child(4){height:13px} .level i:nth-child(5){height:16px}
+  .level i.lit{background:var(--muted);}
+  .status{flex:1; display:flex; align-items:center; gap:8px; min-width:0;
+          font:500 9.5px/1 ui-monospace,Menlo,monospace; letter-spacing:.13em; text-transform:uppercase;
+          color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .status .dot{width:5px; height:5px; border-radius:50%; background:var(--red); flex:none;}
+  .in-tune .status{color:var(--brass);} .in-tune .status .dot{background:var(--brass);}
+
+  .dim{opacity:.32;}
+
+  /* ================= состояния без доступа ================= */
+  .state{flex:1; display:none; flex-direction:column; justify-content:center; padding:0 32px 24px; gap:14px;}
+  .state.show{display:flex;}
+  .state h2{font-size:20px; font-weight:600; letter-spacing:-.01em;}
+  .state p{font-size:13px; line-height:1.55; color:var(--muted); max-width:34ch;}
+  .state .actions{display:flex; flex-direction:column; gap:8px; margin-top:8px;}
+  .btn{display:inline-flex; align-items:center; justify-content:center; height:42px; padding:0 16px;
+       border-radius:7px; border:1px solid var(--line); color:var(--text); font-size:13px;}
+  .btn:hover{border-color:var(--line2);}
+  .btn.primary{background:var(--brass); border-color:var(--brass); color:var(--btn-text); font-weight:600;}
+  .btn.primary:hover{filter:brightness(1.06);}
+  .btn.ghost{color:var(--muted); border-color:transparent;}
+  .btn.ghost:hover{color:var(--text); border-color:var(--line);}
+  .btn:disabled{opacity:.4; pointer-events:none;}
+
+  /* ================= оверлеи ================= */
+  .scrim{position:absolute; inset:0; background:rgba(0,0,0,.55); opacity:0; pointer-events:none;
+         transition:opacity .22s; z-index:30;}
+  .scrim.show{opacity:1; pointer-events:auto;}
+
+  .sheet{position:absolute; left:0; right:0; bottom:0; z-index:40; background:var(--panel);
+         border-radius:18px 18px 0 0; box-shadow:0 -20px 50px rgba(0,0,0,.35);
+         transform:translateY(102%); transition:transform .26s cubic-bezier(.22,.8,.28,1);
+         max-height:86%; display:flex; flex-direction:column; color:var(--text);}
+  .sheet.show{transform:translateY(0);}
+  .device.desktop .sheet{left:50%; right:auto; bottom:auto; top:50%; width:520px; max-height:84%;
+        border-radius:12px; transform:translate(-50%,-46%) scale(.98); opacity:0; pointer-events:none;
+        transition:transform .2s, opacity .2s; box-shadow:0 30px 70px rgba(0,0,0,.5);}
+  .device.desktop .sheet.show{transform:translate(-50%,-50%) scale(1); opacity:1; pointer-events:auto;}
+
+  .sheet-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px 10px; flex:none;}
+  .sheet-head h2{font-size:15px; font-weight:600;}
+  .x{width:30px; height:30px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+     color:var(--muted); font-size:16px;}
+  .x:hover{background:var(--panel2); color:var(--text);}
+  .sheet-body{padding:0 18px 18px; overflow:auto; -webkit-overflow-scrolling:touch;}
+  .handle{width:36px; height:4px; border-radius:2px; background:var(--line2); margin:8px auto 0;}
+
+  .list{display:flex; flex-direction:column; gap:2px;}
+  .row{display:flex; align-items:center; gap:12px; width:100%; padding:10px; border-radius:8px; text-align:left;}
+  .row:hover{background:var(--panel2);}
+  .row-main{flex:1; display:flex; flex-direction:column; gap:4px; min-width:0;}
+  .row-main b{font-size:13.5px; font-weight:500;}
+  .row-sub{font:400 9.5px/1 ui-monospace,Menlo,monospace; letter-spacing:.12em; color:var(--muted);}
+  .row .check{color:var(--brass); font-size:12px; opacity:0;}
+  .row.active .check{opacity:1;}
+  .row.active b{color:var(--brass);}
+  .row .edit{color:var(--dim); font:500 9px/1 ui-monospace,Menlo,monospace; letter-spacing:.1em; padding:6px;}
+  .row .edit:hover{color:var(--text);}
+  .ref-val{width:38px; flex:none; font:500 14px/1 "JetBrains Mono",monospace;
+            color:var(--muted); font-variant-numeric:tabular-nums;}
+  .row.active .ref-val{color:var(--brass);}
+  .instgrid{display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 4px;}
+  .ichip{padding:8px 10px; border:1px solid var(--line); border-radius:6px;
+         font:400 11.5px/1 -apple-system,sans-serif; color:var(--muted);}
+  .ichip:hover{color:var(--text); border-color:var(--line2);}
+  .ichip.on{color:var(--brass); border-color:color-mix(in srgb, var(--brass) 45%, var(--line));}
+  .empty-note{font-size:12px; line-height:1.55; color:var(--muted); padding:6px 0 14px;}
+  .section-title{font:500 9px/1 ui-monospace,Menlo,monospace; letter-spacing:.14em; text-transform:uppercase;
+                 color:var(--dim); margin:14px 0 8px;}
+  .sheet-foot{padding:10px 18px 18px; flex:none;}
+
+  /* опорная частота */
+  .refbig{display:flex; align-items:baseline; gap:8px; margin:2px 0 6px;}
+  .refbig input{width:4.1em; padding:0 0 2px; background:transparent; border:0;
+            border-bottom:1px solid var(--line); border-radius:0; color:var(--text);
+            font:500 40px/1.05 "JetBrains Mono",monospace; letter-spacing:-.02em;
+            font-variant-numeric:tabular-nums;}
+  .refbig input:focus{outline:none; border-bottom-color:var(--brass);}
+  .refbig span{font:400 11px/1 ui-monospace,Menlo,monospace; letter-spacing:.1em; color:var(--muted);}
+  .refhint{margin:-2px 0 6px; font:400 10px/1.4 ui-monospace,Menlo,monospace; color:var(--dim);}
+  input[type=range]{width:100%; appearance:none; background:transparent; margin:14px 0 6px; height:22px;}
+  input[type=range]::-webkit-slider-runnable-track{height:2px; background:var(--line2); border-radius:2px;}
+  input[type=range]::-webkit-slider-thumb{appearance:none; width:16px; height:16px; margin-top:-7px;
+        background:var(--brass); border-radius:50%; border:2px solid var(--panel); box-shadow:0 0 0 1px var(--brass);}
+  .scale{display:flex; justify-content:space-between; font:400 9px/1 ui-monospace,Menlo,monospace;
+         color:var(--dim); letter-spacing:.06em;}
+  .quick{display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 4px;}
+  .qbtn{padding:7px 9px; border:1px solid var(--line); border-radius:6px;
+        font:400 10px/1 ui-monospace,Menlo,monospace; color:var(--muted);}
+  .qbtn:hover{color:var(--text); border-color:var(--line2);}
+  .qbtn.on{color:var(--brass); border-color:var(--brass);}
+
+  /* настройки */
+  .group{border-top:1px solid var(--line); padding:14px 0 4px;}
+  .group:first-of-type{border-top:0; padding-top:2px;}
+  .rowline{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; min-height:44px;}
+  .rowline .lbl{font-size:13px; color:var(--text);}
+  .rowline .sub{display:block; font-size:10.5px; color:var(--muted); margin-top:3px;}
+  .rowline .val{font:400 10.5px/1 ui-monospace,Menlo,monospace; color:var(--muted);}
+  .seg{display:inline-flex; background:var(--panel2); border-radius:6px; padding:2px; gap:2px;}
+  .seg button{padding:6px 9px; border-radius:4px; font:400 10px/1 ui-monospace,Menlo,monospace;
+              color:var(--muted); letter-spacing:.02em;}
+  .seg button.on{background:var(--panel); color:var(--text); box-shadow:0 0 0 1px var(--line);}
+  .switch{width:38px; height:22px; border-radius:11px; background:var(--line2); position:relative;
+          transition:background .18s; flex:none;}
+  .switch::after{content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%;
+                 background:#fff; transition:transform .18s;}
+  .switch.on{background:var(--brass);}
+  .switch.on::after{transform:translateX(16px);}
+
+  /* редактор */
+  .field{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  .field label{font:500 9px/1 ui-monospace,Menlo,monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--dim);}
+  .field input[type=text],.field select{height:38px; border:1px solid var(--line); border-radius:6px;
+        background:var(--panel2); color:var(--text); padding:0 10px; font-size:13px;}
+  .field input[type=text]:focus,.field select:focus{outline:none; border-color:var(--brass);}
+  .stepper{display:flex; align-items:center; gap:12px;}
+  .stepper button{width:34px; height:34px; border:1px solid var(--line); border-radius:6px; color:var(--text);}
+  .stepper button:hover{border-color:var(--line2);}
+  .stepper span{font:400 11px/1 ui-monospace,Menlo,monospace; color:var(--muted);}
+  .strlist{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px;}
+  .strlist .field{margin:0;}
+  .strlist select{width:100%;}
+
+  /* ================= демо-панель ================= */
+  .demo{--line2:#3A3E42; --brass:#C8A15A; --panel:#1D2023;
+        width:308px; background:#16181A; border:1px solid #2A2D30; border-radius:14px; padding:16px;
+        color:#E8E6E1; flex:none; box-shadow:0 18px 40px rgba(0,0,0,.18);}
+  .demo .badge{display:inline-block; font:500 8.5px/1 ui-monospace,Menlo,monospace; letter-spacing:.16em;
+        text-transform:uppercase; color:#C8A15A; border:1px solid #4A4130; border-radius:4px; padding:4px 6px;}
+  .demo h1{font-size:14px; font-weight:600; margin:10px 0 4px;}
+  .demo .hint{font-size:11px; line-height:1.5; color:#8A8F94; margin-bottom:14px;}
+  .demo .dgroup{margin-top:12px;}
+  .demo .dlabel{font:500 8.5px/1 ui-monospace,Menlo,monospace; letter-spacing:.14em; text-transform:uppercase;
+        color:#6E7479; margin-bottom:6px;}
+  .demo .seg{background:#1D2023; width:100%;}
+  .demo .seg button{flex:1; color:#8A8F94;}
+  .demo .seg button.on{background:#2A2E32; color:#E8E6E1; box-shadow:none;}
+  .demo select,.demo input[type=range]{width:100%;}
+  .demo select{height:34px; background:#1D2023; color:#E8E6E1; border:1px solid #2A2D30; border-radius:6px;
+        padding:0 8px; font-size:12px;}
+  .demo input[type=range]{margin:8px 0 0;}
+  input[type=range]:disabled{opacity:.35;}
+  .sheet-body.scrolls{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 18px),transparent);
+        mask-image:linear-gradient(to bottom,#000 calc(100% - 18px),transparent);}
+  .demo .num{display:flex; justify-content:space-between; font:400 10px/1 ui-monospace,Menlo,monospace; color:#8A8F94;}
+  .demo .flink{display:block; width:100%; margin-top:12px; text-align:left; font-size:11px; color:#8A8F94;
+        border-top:1px solid #24272A; padding-top:10px;}
+  .demo .flink:hover{color:#E8E6E1;}
+
+  @media (max-width: 1280px){ .stage{gap:28px; padding:24px;} }
+  .no-anim .sheet, .no-anim .scrim, .no-anim .switch, .no-anim .switch::after{transition:none !important;}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <div class="col">
+    <div class="device phone" id="device">
+      <div class="island"></div>
+      <div class="app" id="app">
+        <div class="topbar">
+          <button class="chip" id="btnPreset" data-action="open-presets" aria-label="Выбрать строй">
+            <span class="k" id="presetName">Standard E</span><span class="chev"></span>
+          </button>
+          <div class="top-right">
+            <button class="chip a4" id="btnRef" data-action="open-reference" aria-label="Опорная частота">
+              <span class="k">A4</span><span class="v" id="refChip">442,0</span><span class="k" id="a4unit">Гц</span>
+            </button>
+            <button class="icon" id="btnSettings" data-action="open-settings" aria-label="Настройки">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                   stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 0 1 0 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/>
+                <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="tuner" id="tuner">
+          <div class="center">
+            <div class="notewrap">
+              <span class="note" id="note">E</span>
+              <span class="oct" id="oct">2</span>
+            </div>
+            <div class="freq">
+              <span class="val" id="measured">82,4</span><span class="unit" id="unitHz">Гц</span>
+              <span class="sep">/</span><span class="target" id="target">82,4</span>
+            </div>
+            <svg class="gauge" id="gauge" role="img" aria-label="Шкала отклонения"></svg>
+            <div class="centsrow" id="centsrow">
+              <span class="cents" id="cents">+00</span><span class="centslbl" id="centsLbl">центов</span>
+            </div>
+          </div>
+          <div class="strings" id="strings"></div>
+          <div class="bottom">
+            <div class="level"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i><i></i></div>
+            <div class="status" id="status"><i class="dot"></i><span>в строе</span></div>
+          </div>
+        </div>
+
+        <div class="state" id="stateScreen"></div>
+
+        <div class="scrim" id="scrim" data-action="close-sheet"></div>
+        <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+      </div>
+    </div>
+    <div class="caption">Unisono · прототип</div>
+  </div>
+
+  <aside class="demo">
+    <span class="badge">демо-панель</span>
+    <h1>Unisono</h1>
+    <p class="hint">Не часть интерфейса. Переключайте устройство, состояние и отклонение, чтобы проверить, как ведёт себя макет.</p>
+
+    <div class="dgroup">
+      <div class="dlabel">Устройство</div>
+      <div class="seg" id="segDevice">
+        <button data-action="device" data-v="phone" class="on">Android</button>
+        <button data-action="device" data-v="desktop">macOS</button>
+      </div>
+    </div>
+
+    <div class="dgroup">
+      <div class="dlabel">Тема</div>
+      <div class="seg" id="segTheme">
+        <button data-action="theme" data-v="dark" class="on">Тёмная</button>
+        <button data-action="theme" data-v="light">Светлая</button>
+      </div>
+    </div>
+
+    <div class="dgroup">
+      <div class="dlabel">Состояние</div>
+      <select id="demoState">
+        <option value="tracking">Отслеживание</option>
+        <option value="intune">В строе</option>
+        <option value="silent">Тишина</option>
+        <option value="uncertain">Неуверенно</option>
+        <option value="noperm">Нет доступа</option>
+        <option value="error">Ошибка</option>
+      </select>
+    </div>
+
+    <div class="dgroup">
+      <div class="dlabel">Отклонение, центов</div>
+      <div class="num"><span>−50</span><span id="demoCentsVal">−7</span><span>+50</span></div>
+      <input type="range" id="demoCents" min="-50" max="50" step="1" value="-7">
+    </div>
+
+    <div class="dgroup">
+      <div class="dlabel">Струна</div>
+      <select id="demoString"></select>
+    </div>
+
+    <button class="flink" data-action="reset">Сбросить прототип</button>
+  </aside>
+</div>
+
+<script>
+/* ============================================================
+   Прототип: только интерфейс. Никакого аудио и DSP.
+   ============================================================ */
+
+const LAT = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const SOL = ["До","До#","Ре","Ре#","Ми","Фа","Фа#","Соль","Соль#","Ля","Ля#","Си"];
+const SOL_EN = ["Do","Do#","Re","Re#","Mi","Fa","Fa#","Sol","Sol#","La","La#","Si"];
+
+const I18N = {
+  ru: {
+    hz:"Гц", cents_label:"центов",
+    status_flat:"ниже", status_sharp:"выше", status_exact:"ровно",
+    status_tune:"в строе", status_listen:"слушаю…", status_one:"играйте одну струну",
+    status_chromatic:"хроматический", gauge_flat:"НИЖЕ", gauge_sharp:"ВЫШЕ",
+    instrument:"Инструмент", chromatic:"Хроматический",
+    chromatic_hint:"Струны не показываются — тюнер определяет ближайшую ноту.",
+    no_strings:"Без струн",
+    settings:"Настройки", tuning:"Строй", ref_a4:"Опорная частота A4",
+    manage:"Инструменты и строи", mode:"Режим", m_strings:"Струны",
+    m_manual:"Вручную", m_chromatic:"Хроматика",
+    display:"Отображение", notation:"Нотация", n_solf:"До Ре Ми", theme:"Тема",
+    t_dark:"Тёмная", t_light:"Светлая", big_type:"Крупный шрифт", language:"Язык",
+    accuracy:"Точность", tolerance:"Допуск «в строе»", sensitivity:"Чувствительность",
+    s_low:"Низкая", s_normal:"Обычная", s_high:"Высокая", low_tunings:"Низкий диапазон",
+    feedback:"Обратная связь", haptics:"Вибрация", sound:"Звук «в строе»",
+    reset:"Сбросить настройки", version:"Версия 0.1 · прототип",
+    ref_hint:"нажмите на число, чтобы ввести с клавиатуры", step:"шаг 0,1 Гц",
+    frequent:"частые значения", done:"Готово",
+    new_tuning:"＋ Новый строй", edit_short:"ИЗМ.",
+    editor_new:"Новый строй", editor_edit:"Изменить строй",
+    name:"Название", name_ph:"Например, Open C", strings:"Струн",
+    per_string:"Строй по струнам", string_n:"{n}-я струна",
+    editor_hint:"Целевые частоты считаются от опорной A4 — менять их вручную не нужно.",
+    cancel:"Отмена", save:"Сохранить",
+    perm_title:"Нужен доступ к микрофону",
+    perm_body:"Тюнер слушает струну и ничего не записывает. Звук не покидает устройство.",
+    perm_ask:"Спросить снова", perm_settings:"Открыть настройки системы",
+    err_title:"Микрофон занят",
+    err_body:"Другое приложение использует микрофон. Закройте его и попробуйте снова.",
+    retry:"Повторить",
+    aria_preset:"Выбрать строй", aria_ref:"Опорная частота", aria_settings:"Настройки",
+    aria_gauge:"Шкала отклонения", aria_close:"Закрыть",
+    aria_ref_hz:"Опорная частота A4 в герцах",
+    aria_fewer:"Меньше струн", aria_more:"Больше струн"
+  },
+  en: {
+    hz:"Hz", cents_label:"cents",
+    status_flat:"flat", status_sharp:"sharp", status_exact:"on pitch",
+    status_tune:"in tune", status_listen:"listening…", status_one:"play one string",
+    status_chromatic:"chromatic", gauge_flat:"FLAT", gauge_sharp:"SHARP",
+    instrument:"Instrument", chromatic:"Chromatic",
+    chromatic_hint:"Strings are hidden — the tuner shows the nearest note.",
+    no_strings:"No strings",
+    settings:"Settings", tuning:"Tuning", ref_a4:"Reference pitch A4",
+    manage:"Instruments & tunings", mode:"Mode", m_strings:"Strings",
+    m_manual:"Manual", m_chromatic:"Chromatic",
+    display:"Display", notation:"Notation", n_solf:"Do Re Mi", theme:"Theme",
+    t_dark:"Dark", t_light:"Light", big_type:"Large type", language:"Language",
+    accuracy:"Accuracy", tolerance:"In-tune tolerance", sensitivity:"Sensitivity",
+    s_low:"Low", s_normal:"Normal", s_high:"High", low_tunings:"Low range",
+    feedback:"Feedback", haptics:"Haptics", sound:"In-tune sound",
+    reset:"Reset settings", version:"Version 0.1 · prototype",
+    ref_hint:"tap the number to type a value", step:"step 0.1 Hz",
+    frequent:"common values", done:"Done",
+    new_tuning:"＋ New tuning", edit_short:"EDIT",
+    editor_new:"New tuning", editor_edit:"Edit tuning",
+    name:"Name", name_ph:"For example, Open C", strings:"Strings",
+    per_string:"Pitch per string", string_n:"String {n}",
+    editor_hint:"Target pitches are derived from the A4 reference — no manual edits needed.",
+    cancel:"Cancel", save:"Save",
+    perm_title:"Microphone access needed",
+    perm_body:"The tuner listens to the string and records nothing. Audio never leaves your device.",
+    perm_ask:"Ask again", perm_settings:"Open system settings",
+    err_title:"Microphone is busy",
+    err_body:"Another app is using the microphone. Close it and try again.",
+    retry:"Retry",
+    aria_preset:"Choose tuning", aria_ref:"Reference pitch", aria_settings:"Settings",
+    aria_gauge:"Deviation scale", aria_close:"Close",
+    aria_ref_hz:"Reference A4 in hertz",
+    aria_fewer:"Fewer strings", aria_more:"More strings"
+  }
+};
+
+const REFS = [
+  { v: 415, title: "Барочная музыка",         note: "строй XVIII века, старинные инструменты",
+    titleEn: "Baroque music",        noteEn: "18th-century pitch, period instruments" },
+  { v: 432, title: "Альтернативный",          note: "не стандарт, «винтаж»",
+    titleEn: "Alternative",          noteEn: "non-standard, “vintage”" },
+  { v: 435, title: "Старый концертный",       note: "XIX век, до введения 440",
+    titleEn: "Old concert pitch",    noteEn: "19th century, before 440" },
+  { v: 438, title: "Пониженный концертный",   note: "ансамбли и залы",
+    titleEn: "Lower concert pitch",  noteEn: "ensembles and halls" },
+  { v: 440, title: "Стандарт",                note: "ISO 16, большинство гитар",
+    titleEn: "Standard",             noteEn: "ISO 16, most guitars" },
+  { v: 441, title: "Подстройка под ансамбль", note: "чуть выше стандарта",
+    titleEn: "Ensemble adjustment",  noteEn: "slightly above standard" },
+  { v: 442, title: "Оркестровая практика",    note: "многие симфонические оркестры",
+    titleEn: "Orchestral practice",  noteEn: "many symphony orchestras" },
+  { v: 443, title: "Высокий оркестровый",     note: "Вена, Германия",
+    titleEn: "High orchestral pitch",noteEn: "Vienna, Germany" },
+  { v: 466, title: "Высокий барочный",        note: "Chorton, старинные инструменты",
+    titleEn: "High baroque pitch",   noteEn: "Chorton, period instruments" }
+];
+
+const INSTRUMENTS = [
+  { id:"guitar",    ru:"Гитара",        en:"Guitar" },
+  { id:"bass",      ru:"Бас-гитара",    en:"Bass" },
+  { id:"ukulele",   ru:"Укулеле",       en:"Ukulele" },
+  { id:"violin",    ru:"Скрипка",       en:"Violin" },
+  { id:"viola",     ru:"Альт",          en:"Viola" },
+  { id:"cello",     ru:"Виолончель",    en:"Cello" },
+  { id:"balalaika", ru:"Балалайка",     en:"Balalaika" },
+  { id:"domra",     ru:"Домра",         en:"Domra" },
+  { id:"mandolin",  ru:"Мандолина",     en:"Mandolin" },
+  { id:"banjo",     ru:"Банджо",        en:"Banjo" },
+  { id:"contrabass",ru:"Контрабас",     en:"Double bass" },
+  { id:"chromatic", ru:"Хроматический", en:"Chromatic" }
+];
+
+const TUNINGS = {
+  guitar: [
+    { id:"standard_e",  name:{ru:"Standard E", en:"Standard E"}, strings:[40,45,50,55,59,64] },
+    { id:"drop_d",      name:{ru:"Drop D", en:"Drop D"},         strings:[38,45,50,55,59,64] },
+    { id:"eb",          name:{ru:"Eb standard", en:"Eb standard"}, strings:[39,44,49,54,58,63] },
+    { id:"d_standard",  name:{ru:"D standard", en:"D standard"}, strings:[38,43,48,53,57,62] },
+    { id:"drop_c",      name:{ru:"Drop C", en:"Drop C"},         strings:[36,43,48,53,57,62] },
+    { id:"dadgad",      name:{ru:"DADGAD", en:"DADGAD"},         strings:[38,45,50,55,57,62] },
+    { id:"open_g",      name:{ru:"Open G", en:"Open G"},         strings:[38,43,50,55,59,62] },
+    { id:"open_d",      name:{ru:"Open D", en:"Open D"},         strings:[38,45,50,54,57,62] },
+    { id:"guitar_7",    name:{ru:"7-струнная", en:"7-string"},   strings:[35,40,45,50,55,59,64] }
+  ],
+  bass: [
+    { id:"bass4", name:{ru:"Бас 4", en:"Bass 4"}, strings:[28,33,38,43] },
+    { id:"bass5", name:{ru:"Бас 5", en:"Bass 5"}, strings:[23,28,33,38,43] }
+  ],
+  ukulele: [
+    { id:"uke_high_g", name:{ru:"High-G", en:"High-G"}, strings:[67,60,64,69] },
+    { id:"uke_low_g",  name:{ru:"Low-G", en:"Low-G"},   strings:[55,60,64,69] }
+  ],
+  violin:    [ { id:"violin_std", name:{ru:"Стандарт", en:"Standard"}, strings:[55,62,69,76] } ],
+  viola:     [ { id:"viola_std",  name:{ru:"Стандарт", en:"Standard"}, strings:[48,55,62,69] } ],
+  cello:     [ { id:"cello_std",  name:{ru:"Стандарт", en:"Standard"}, strings:[36,43,50,57] } ],
+  balalaika: [ { id:"balalaika_prima", name:{ru:"Прима", en:"Prima"}, strings:[64,64,69] } ],
+  domra: [
+    { id:"domra_3", name:{ru:"3-струнная", en:"3-string"}, strings:[64,69,74] },
+    { id:"domra_4", name:{ru:"4-струнная", en:"4-string"}, strings:[55,62,69,76] }
+  ],
+  mandolin: [ { id:"mandolin_std", name:{ru:"Стандарт", en:"Standard"}, strings:[55,62,69,76] } ],
+  banjo: [
+    { id:"banjo_5", name:{ru:"5-струнное, Open G", en:"5-string, Open G"}, strings:[50,55,59,62,67] },
+    { id:"banjo_tenor", name:{ru:"Тенор C-G-D-A", en:"Tenor C-G-D-A"}, strings:[48,55,62,69] }
+  ],
+  contrabass: [ { id:"contrabass_std", name:{ru:"Стандарт", en:"Standard"}, strings:[28,33,38,43] } ],
+  chromatic: []
+};
+
+const state = {
+  device: "phone",
+  theme: "dark",
+  overlay: null,          // presets | reference | settings | editor
+  custom: [],
+  settings: {
+    reference: 442.0,
+    instrumentId: "guitar",
+    tuningId: "standard_e",
+    tolerance: 3,
+    notation: "latin",
+    language: "ru",
+    themeMode: "dark",
+    haptics: true,
+    sound: false,
+    lowTunings: false,
+    sensitivity: "normal",
+    bigType: false
+  },
+  demo: { state:"tracking", cents:-7, stringIndex:0 },
+  draft: null
+};
+
+/* ---------- утилиты ---------- */
+const $ = s => document.querySelector(s);
+const el = (id) => document.getElementById(id);
+const clone = o => JSON.parse(JSON.stringify(o));
+
+const lang = () => state.settings.language;
+const T = (k) => (I18N[lang()] && I18N[lang()][k]) || k;
+const pname = (p) => (lang() === "en" && p.nameEn) ? p.nameEn : p.name;
+const sep = () => lang() === "ru" ? "," : ".";
+const fmtNum = (v, d = 1) => v.toFixed(d).replace(".", sep());
+
+const midiName = (m) =>
+  state.settings.notation === "latin"
+    ? LAT[m % 12]
+    : (lang() === "en" ? SOL_EN : SOL)[m % 12];
+const midiOct  = (m) => Math.floor(m / 12) - 1;
+const noteFull = (m) => midiName(m) + midiOct(m);
+const hz = (m, ref) => ref * Math.pow(2, (m - 69) / 12);
+const fmtHz = (f) => fmtNum(f, 1);
+const fmtCents = (c) => {
+  const v = Math.round(c);
+  if (v === 0) return "0";
+  return (v < 0 ? "−" : "+") + Math.abs(v);
+};
+
+const instrument = () =>
+  INSTRUMENTS.find(i => i.id === state.settings.instrumentId) || INSTRUMENTS[0];
+const isChromatic = () => state.settings.instrumentId === "chromatic";
+const instrName = (i) => i[lang()] || i.ru;
+const tname = (t) => typeof t.name === "string" ? t.name : (t.name[lang()] || t.name.ru);
+
+const tuningsFor = (instId) =>
+  [...(TUNINGS[instId] || []), ...state.custom.filter(t => t.instrumentId === instId)];
+
+const tuning = () => {
+  if (isChromatic()) return null;
+  const list = tuningsFor(state.settings.instrumentId);
+  return list.find(t => t.id === state.settings.tuningId) || list[0] || null;
+};
+
+const currentStringIndex = () => {
+  const t = tuning();
+  if (!t) return 0;
+  return Math.min(state.demo.stringIndex, t.strings.length - 1);
+};
+
+/* ---------- отрисовка: тюнер ---------- */
+function render() {
+  const dev = el("device");
+  dev.classList.toggle("phone", state.device === "phone");
+  dev.classList.toggle("desktop", state.device === "desktop");
+  dev.classList.toggle("light", state.theme === "light");
+  if (state.device === "desktop" && !dev.querySelector(".titlebar")) {
+    dev.insertAdjacentHTML("afterbegin",
+      `<div class="titlebar"><div class="lights"><i></i><i></i><i></i></div>
+       <div class="wintitle">Unisono</div></div>`);
+    el("app").classList.add("in-window");
+  }
+  if (state.device === "phone") {
+    const tb = dev.querySelector(".titlebar");
+    if (tb) tb.remove();
+    el("app").classList.remove("in-window");
+  }
+
+  const app = el("app");
+  app.classList.toggle("in-tune", state.demo.state === "intune");
+  app.classList.toggle("big-type", state.settings.bigType);
+
+  document.documentElement.lang = lang();
+  el("presetName").textContent = isChromatic()
+    ? T("chromatic")
+    : `${instrName(instrument())} · ${tname(tuning())}`;
+  el("refChip").textContent = fmtNum(state.settings.reference, 1);
+  el("a4unit").textContent = T("hz");
+  el("unitHz").textContent = T("hz");
+  el("centsLbl").textContent = T("cents_label");
+  el("btnPreset").setAttribute("aria-label", T("aria_preset"));
+  el("btnRef").setAttribute("aria-label", T("aria_ref"));
+  el("btnSettings").setAttribute("aria-label", T("aria_settings"));
+
+  const showState = state.demo.state === "noperm" || state.demo.state === "error";
+  el("tuner").style.display = showState ? "none" : "";
+  el("stateScreen").classList.toggle("show", showState);
+  if (showState) renderStateScreen();
+  else renderTuner();
+}
+
+function renderTuner() {
+  const chromatic = isChromatic();
+  const t = tuning();
+  const idx = currentStringIndex();
+  const ref = state.settings.reference;
+  const demoState = state.demo.state;
+
+  // В хроматическом режиме показываем ближайшую ноту к «сыграной» A4 с отклонением из демо-панели.
+  const midi = chromatic ? 69 : t.strings[idx];
+  const target = hz(midi, ref);
+
+  let cents = state.demo.cents;
+  let letter, oct, measured, status, dim = false, gaugeMode = "active";
+
+  if (demoState === "silent") {
+    letter = "—"; oct = ""; measured = null; dim = true; gaugeMode = "idle";
+    status = T("status_listen");
+  } else if (demoState === "uncertain") {
+    letter = midiName(midi); oct = midiOct(midi);
+    measured = target * Math.pow(2, cents / 1200);
+    dim = true; gaugeMode = "dim"; status = T("status_one");
+  } else if (demoState === "intune") {
+    cents = 0;
+    letter = midiName(midi); oct = midiOct(midi); measured = target;
+    status = T("status_tune");
+  } else {
+    measured = target * Math.pow(2, cents / 1200);
+    if (chromatic) {
+      const m = Math.round(69 + 12 * Math.log2(measured / ref));
+      letter = midiName(m); oct = midiOct(m);
+      cents = 1200 * Math.log2(measured / hz(m, ref));
+    } else {
+      letter = midiName(midi); oct = midiOct(midi);
+    }
+    status = Math.abs(cents) < 0.5 ? T("status_exact")
+           : cents < 0 ? T("status_flat") : T("status_sharp");
+  }
+
+  const noteEl = el("note");
+  noteEl.textContent = letter;
+  noteEl.classList.toggle("dim", dim);
+  noteEl.classList.toggle("empty", demoState === "silent");
+  el("oct").textContent = oct;
+
+  const axes = noteAxes(dim, demoState === "intune");
+  noteEl.style.fontVariationSettings =
+    `'wght' ${axes.wght}, 'wdth' ${axes.wdth}, 'slnt' ${axes.slnt}, 'opsz' 144`;
+
+  el("measured").textContent = measured ? fmtHz(measured) : "—";
+  el("target").textContent = fmtHz(target);
+  const hasCents = demoState === "tracking" || demoState === "intune";
+  el("cents").textContent = fmtCents(cents);
+  el("centsrow").style.visibility = hasCents ? "visible" : "hidden";
+  el("status").querySelector("span").textContent = status;
+  el("status").classList.toggle("idle", demoState === "silent");
+
+  el("strings").style.display = chromatic ? "none" : "flex";
+  el("strings").innerHTML = chromatic ? "" : t.strings.map((m, i) =>
+    `<button class="str ${i === idx ? "on" : ""}" data-action="select-string" data-i="${i}"
+             aria-label="${noteFull(m)}">${midiName(m)}</button>`).join("");
+
+  drawGauge(el("gauge"), cents, demoState === "intune", gaugeMode);
+}
+
+// Буква не показывает направление — только «строй поймали» (вес) и «нет сигнала» (приглушение).
+function noteAxes(dim, inTune) {
+  return {
+    wght: dim ? 420 : (inTune ? 720 : 560),
+    wdth: 100,
+    slnt: 0
+  };
+}
+
+function palette() {
+  const cs = getComputedStyle(el("device"));
+  return {
+    line: cs.getPropertyValue("--line").trim(),
+    line2: cs.getPropertyValue("--line2").trim(),
+    text: cs.getPropertyValue("--text").trim(),
+    muted: cs.getPropertyValue("--muted").trim(),
+    dim: cs.getPropertyValue("--dim").trim(),
+    brass: cs.getPropertyValue("--brass").trim()
+  };
+}
+
+function drawGauge(svg, cents, inTune, mode) {
+  const NS = "http://www.w3.org/2000/svg";
+  const W = Math.max(240, svg.clientWidth || 300), H = 88, base = 46, pad = 14;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("height", H);
+  svg.innerHTML = "";
+  svg.setAttribute("aria-label", T("aria_gauge"));
+  const c = palette();
+  const dimAll = mode === "idle" || mode === "dim";
+  const add = (tag, attrs) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    svg.appendChild(n);
+    return n;
+  };
+  const x = v => W / 2 + v * ((W / 2 - pad) / 50);
+  const op = dimAll ? 0.35 : 1;
+
+  add("line", { x1: pad - 4, y1: base, x2: W - pad + 4, y2: base,
+                stroke: c.line, "stroke-width": 1, opacity: op });
+
+  for (let t = -50; t <= 50; t += 5) {
+    const major = t % 25 === 0;
+    const len = major ? 13 : (t % 10 === 0 ? 9 : 6);
+    add("line", { x1: x(t), y1: base - len, x2: x(t), y2: base - 1,
+                  stroke: major ? c.muted : c.line2, "stroke-width": major ? 1.2 : 1, opacity: op });
+  }
+  for (let t = -5; t <= 5; t++) {
+    const edge = Math.abs(t) === 5;
+    add("line", { x1: x(t), y1: base + 1, x2: x(t), y2: base + (edge ? 6 : 3),
+                  stroke: c.dim, "stroke-width": 1, opacity: op });
+  }
+  [[-50, "−50"], [-25, "−25"], [0, "0"], [25, "+25"], [50, "+50"]].forEach(([t, label]) => {
+    const tx = add("text", { x: x(t), y: base + 21, "text-anchor": "middle", "font-size": 9,
+                             fill: t === 0 ? c.brass : c.muted,
+                             "letter-spacing": ".06em", opacity: op });
+    tx.textContent = label;
+  });
+
+  const capL = add("text", { x: pad, y: base + 34, "font-size": 8.5, fill: c.muted,
+                             "letter-spacing": ".12em", opacity: op });
+  capL.textContent = T("gauge_flat");
+  const capR = add("text", { x: W - pad, y: base + 34, "font-size": 8.5, fill: c.muted,
+                             "letter-spacing": ".12em", "text-anchor": "end", opacity: op });
+  capR.textContent = T("gauge_sharp");
+
+  add("line", { x1: x(0), y1: base - 20, x2: x(0), y2: base + 8, stroke: c.brass,
+                "stroke-width": 1, opacity: dimAll ? 0.25 : (inTune ? 0.9 : 0.4) });
+  [-3, 3].forEach(t => add("line", { x1: x(t), y1: base - 18, x2: x(t), y2: base - 10,
+                                     stroke: c.brass, "stroke-width": 1, opacity: dimAll ? .2 : .45 }));
+
+  if (mode !== "idle") {
+    const nx = x(Math.max(-50, Math.min(50, cents)));
+    const color = inTune ? c.brass : c.text;
+    add("line", { x1: nx, y1: base - 27, x2: nx, y2: base + 9, stroke: color,
+                  "stroke-width": 1.6, opacity: dimAll ? .5 : 1 });
+    add("circle", { cx: nx, cy: base + 9, r: 2.2, fill: color, opacity: dimAll ? .5 : 1 });
+  }
+}
+
+/* ---------- состояния ---------- */
+function renderStateScreen() {
+  const box = el("stateScreen");
+  if (state.demo.state === "noperm") {
+    box.innerHTML = `
+      <h2>${T("perm_title")}</h2>
+      <p>${T("perm_body")}</p>
+      <div class="actions">
+        <button class="btn primary" data-action="grant">${T("perm_ask")}</button>
+        <button class="btn ghost" data-action="os-settings">${T("perm_settings")}</button>
+      </div>`;
+  } else {
+    box.innerHTML = `
+      <h2>${T("err_title")}</h2>
+      <p>${T("err_body")}</p>
+      <div class="actions">
+        <button class="btn primary" data-action="retry">${T("retry")}</button>
+      </div>`;
+  }
+}
+
+/* ---------- отрисовка: шторки ---------- */
+function openSheet(kind, extra) {
+  state.overlay = kind;
+  if (extra) Object.assign(state, extra);
+  renderSheet();
+  el("sheet").classList.add("show");
+  el("scrim").classList.add("show");
+}
+function closeSheet() {
+  state.overlay = null;
+  el("sheet").classList.remove("show");
+  el("scrim").classList.remove("show");
+}
+
+function renderSheet() {
+  const s = el("sheet");
+  if (!state.overlay) { s.innerHTML = ""; return; }
+  if (state.overlay === "presets") s.innerHTML = presetsSheet();
+  if (state.overlay === "reference") s.innerHTML = referenceSheet();
+  if (state.overlay === "settings") s.innerHTML = settingsSheet();
+  if (state.overlay === "editor") s.innerHTML = editorSheet();
+  const body = s.querySelector(".sheet-body");
+  if (body) {
+    requestAnimationFrame(() => body.classList.toggle("scrolls", body.scrollHeight > body.clientHeight + 2));
+  }
+  if (state.overlay === "reference") {
+    const sl = el("refSlider");
+    const inp = el("refInput");
+    const apply = (v) => {
+      state.settings.reference = v;
+      if (sl) sl.value = v;
+      document.querySelectorAll('#sheet .row[data-action="set-ref"]').forEach(row =>
+        row.classList.toggle("active", Math.abs(parseFloat(row.dataset.v) - v) < 0.05));
+      render();
+    };
+    if (sl) sl.oninput = e => {
+      const v = Math.round(parseFloat(e.target.value) * 10) / 10;
+      if (inp) inp.value = fmtNum(v, 1);
+      apply(v);
+    };
+    if (inp) {
+      inp.addEventListener("focus", () => inp.select());
+      inp.oninput = () => {
+        const raw = inp.value.replace(",", ".").trim();
+        const v = parseFloat(raw);
+        if (!isFinite(v) || v < 400 || v > 480) return; // даём дописать
+        apply(Math.round(v * 10) / 10);
+      };
+      inp.onblur = () => {
+        const v = parseFloat(inp.value.replace(",", ".").trim());
+        const safe = isFinite(v) ? Math.min(480, Math.max(400, Math.round(v * 10) / 10))
+                                 : state.settings.reference;
+        inp.value = fmtNum(safe, 1);
+        apply(safe);
+      };
+      inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } };
+    }
+  }
+}
+
+function notesLine(p) {
+  return p.strings.map(m => midiName(m)).join(" ");
+}
+
+function presetsSheet() {
+  const instId = state.settings.instrumentId;
+  const chromatic = isChromatic();
+
+  const chips = INSTRUMENTS.map(i =>
+    `<button class="ichip ${i.id === instId ? "on" : ""}" data-action="select-instrument"
+             data-id="${i.id}">${instrName(i)}</button>`).join("");
+
+  const list = chromatic
+    ? `<div class="empty-note">${T("chromatic_hint")}</div>`
+    : `<div class="list">${tuningsFor(instId).map(t => {
+        const custom = !!t.instrumentId;
+        return `<button class="row ${t.id === state.settings.tuningId ? "active" : ""}"
+                  data-action="select-tuning" data-id="${t.id}">
+          <span class="row-main"><b>${tname(t)}</b><span class="row-sub">${notesLine(t)}</span></span>
+          ${custom ? `<span class="edit" data-action="edit-preset" data-id="${t.id}">${T("edit_short")}</span>` : ""}
+          <span class="check">✓</span>
+        </button>`;
+      }).join("")}</div>`;
+
+  return `<div class="handle"></div>
+    <div class="sheet-head"><h2>${T("instrument")} · ${T("tuning")}</h2>
+      <button class="x" data-action="close-sheet" aria-label="${T("aria_close")}">✕</button></div>
+    <div class="sheet-body">
+      <div class="section-title" style="margin-top:0">${T("instrument")}</div>
+      <div class="instgrid">${chips}</div>
+      <div class="section-title">${T("tuning")}</div>
+      ${list}
+    </div>
+    ${chromatic ? "" : `<div class="sheet-foot">
+      <button class="btn ghost" data-action="new-preset" style="width:100%">${T("new_tuning")}</button>
+    </div>`}`;
+}
+
+function referenceSheet() {
+  const rows = REFS.map(r => {
+    const active = Math.abs(r.v - state.settings.reference) < 0.05;
+    return `<button class="row ${active ? "active" : ""}" data-action="set-ref" data-v="${r.v}">
+        <span class="ref-val">${r.v}</span>
+        <span class="row-main"><b>${lang() === "en" ? r.titleEn : r.title}</b><span class="row-sub">${lang() === "en" ? r.noteEn : r.note}</span></span>
+        <span class="check">✓</span>
+      </button>`;
+  }).join("");
+
+  return `<div class="handle"></div>
+    <div class="sheet-head"><h2>${T("ref_a4")}</h2>
+      <button class="x" data-action="close-sheet" aria-label="${T("aria_close")}">✕</button></div>
+    <div class="sheet-body">
+      <div class="refbig">
+        <input id="refInput" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"
+               value="${fmtNum(state.settings.reference, 1)}"
+               aria-label="${T("aria_ref_hz")}">
+        <span>${T("hz")}</span>
+      </div>
+      <div class="refhint">${T("ref_hint")}</div>
+      <input id="refSlider" type="range" min="400" max="480" step="0.1" value="${state.settings.reference}">
+      <div class="scale"><span>400</span><span>${T("step")}</span><span>480</span></div>
+      <div class="section-title">${T("frequent")}</div>
+      <div class="list">${rows}</div>
+    </div>
+    <div class="sheet-foot"><button class="btn primary" data-action="close-sheet" style="width:100%">${T("done")}</button></div>`;
+}
+
+function seg(action, options, current, dataKey) {
+  return `<div class="seg">${options.map(o =>
+    `<button class="${o.v === current ? "on" : ""}" data-action="${action}" data-v="${o.v}">${o.t}</button>`
+  ).join("")}</div>`;
+}
+
+function settingsSheet() {
+  const st = state.settings;
+  const sw = (key, on) => `<button class="switch ${on ? "on" : ""}" role="switch" aria-checked="${on}"
+       data-action="toggle" data-key="${key}" aria-label="${key}"></button>`;
+
+  return `<div class="handle"></div>
+    <div class="sheet-head"><h2>${T("settings")}</h2>
+      <button class="x" data-action="close-sheet" aria-label="${T("aria_close")}">✕</button></div>
+    <div class="sheet-body">
+
+      <div class="group">
+        <div class="section-title" style="margin-top:0">${T("tuning")}</div>
+        <button class="row" data-action="open-reference" style="padding-left:0">
+          <span class="row-main"><b style="font-weight:400">${T("ref_a4")}</b></span>
+          <span class="val">${fmtNum(st.reference, 1)} ${T("hz")} ›</span>
+        </button>
+        <button class="row" data-action="open-presets" style="padding-left:0">
+          <span class="row-main"><b style="font-weight:400">${T("manage")}</b></span>
+          <span class="val">${instrName(instrument())} ›</span>
+        </button>
+      </div>
+
+      <div class="group">
+        <div class="section-title" style="margin-top:0">${T("display")}</div>
+        <div class="rowline"><span class="lbl">${T("notation")}</span>
+          ${seg("notation", [{v:"latin",t:"C D E"},{v:"solfeggio",t:T("n_solf")}], st.notation)}</div>
+        <div class="rowline"><span class="lbl">${T("theme")}</span>
+          ${seg("theme", [{v:"dark",t:T("t_dark")},{v:"light",t:T("t_light")}], state.theme)}</div>
+        <div class="rowline"><span class="lbl">${T("big_type")}</span>${sw("bigType", st.bigType)}</div>
+        <div class="rowline"><span class="lbl">${T("language")}</span>
+          ${seg("language", [{v:"ru",t:"Русский"},{v:"en",t:"English"}], st.language)}</div>
+      </div>
+
+      <div class="group">
+        <div class="section-title" style="margin-top:0">${T("accuracy")}</div>
+        <div class="rowline"><span class="lbl">${T("tolerance")}</span>
+          ${seg("tolerance", [{v:"2",t:"2"},{v:"3",t:"3"},{v:"5",t:"5"}], String(st.tolerance))}</div>
+        <div class="rowline"><span class="lbl">${T("sensitivity")}</span>
+          ${seg("sensitivity", [{v:"low",t:T("s_low")},{v:"normal",t:T("s_normal")},{v:"high",t:T("s_high")}], st.sensitivity)}</div>
+        <div class="rowline"><span class="lbl">${T("low_tunings")}</span>${sw("lowTunings", st.lowTunings)}</div>
+      </div>
+
+      <div class="group">
+        <div class="section-title" style="margin-top:0">${T("feedback")}</div>
+        <div class="rowline"><span class="lbl">${T("haptics")}</span>${sw("haptics", st.haptics)}</div>
+        <div class="rowline"><span class="lbl">${T("sound")}</span>${sw("sound", st.sound)}</div>
+      </div>
+
+      <div class="group">
+        <button class="row" data-action="reset" style="padding-left:0">
+          <span class="row-main"><b style="font-weight:400;color:var(--red)">${T("reset")}</b></span>
+        </button>
+        <div class="rowline"><span class="lbl" style="color:var(--dim)">${T("version")}</span></div>
+      </div>
+    </div>`;
+}
+
+function editorSheet() {
+  const d = state.draft;
+  const options = [];
+  for (let m = 21; m <= 96; m++) {
+    options.push(`<option value="${m}" ${m === d.strings[0] ? "" : ""}>${noteFull(m)}</option>`);
+  }
+  const selects = d.strings.map((m, i) => `
+    <div class="field">
+      <label>${T("string_n").replace("{n}", i + 1)}</label>
+      <select data-string="${i}">
+        ${Array.from({length: 76}, (_, k) => k + 21).map(v =>
+          `<option value="${v}" ${v === m ? "selected" : ""}>${noteFull(v)}</option>`).join("")}
+      </select>
+    </div>`).join("");
+
+  return `<div class="handle"></div>
+    <div class="sheet-head"><h2>${d.id ? T("editor_edit") : T("editor_new")} · ${instrName(instrument())}</h2>
+      <button class="x" data-action="close-sheet" aria-label="${T("aria_close")}">✕</button></div>
+    <div class="sheet-body">
+      <div class="field"><label>${T("name")}</label>
+        <input id="draftName" type="text" maxlength="24" value="${d.name}" placeholder="${T("name_ph")}"></div>
+      <div class="field"><label>${T("strings")}</label>
+        <div class="stepper">
+          <button data-action="strings-dec" aria-label="${T("aria_fewer")}">−</button>
+          <span>${d.strings.length}</span>
+          <button data-action="strings-inc" aria-label="${T("aria_more")}">+</button>
+        </div>
+      </div>
+      <div class="field"><label>${T("per_string")}</label>
+        <div class="strlist">${selects}</div>
+      </div>
+      <p style="font-size:11px;line-height:1.5;color:var(--muted)">
+        ${T("editor_hint")}</p>
+    </div>
+    <div class="sheet-foot" style="display:flex;gap:8px">
+      <button class="btn ghost" data-action="close-sheet" style="flex:1">${T("cancel")}</button>
+      <button class="btn primary" data-action="save-preset" style="flex:1"
+        ${d.name.trim() ? "" : "disabled"}>${T("save")}</button>
+    </div>`;
+}
+
+/* ---------- обработка действий ---------- */
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-action]");
+  if (!t) return;
+  const a = t.dataset.action;
+
+  if (a === "close-sheet") { closeSheet(); return; }
+  if (a === "open-presets") { openSheet("presets"); return; }
+  if (a === "open-reference") { state.overlay = "reference"; renderSheet(); openSheet("reference"); return; }
+  if (a === "open-settings") { openSheet("settings"); return; }
+
+  if (a === "select-instrument") {
+    const id = t.dataset.id;
+    state.settings.instrumentId = id;
+    state.demo.stringIndex = 0;
+    if (id === "chromatic") {
+      state.settings.tuningId = null;
+      render(); closeSheet();
+    } else {
+      const list = tuningsFor(id);
+      state.settings.tuningId = list[0] ? list[0].id : null;
+      render(); renderSheet();
+    }
+    syncDemo(); return;
+  }
+  if (a === "select-tuning") {
+    state.settings.tuningId = t.dataset.id;
+    state.demo.stringIndex = 0;
+    render(); closeSheet(); syncDemo(); return;
+  }
+  if (a === "new-preset") {
+    const cur = tuning();
+    state.draft = {
+      id: null, name: "", instrumentId: state.settings.instrumentId,
+      strings: cur ? [...cur.strings] : [40,45,50,55,59,64]
+    };
+    openSheet("editor"); return;
+  }
+  if (a === "edit-preset") {
+    e.stopPropagation();
+    const p = state.custom.find(x => x.id === t.dataset.id);
+    if (!p) return;
+    state.draft = { id: p.id, name: p.name, instrumentId: p.instrumentId, strings: [...p.strings] };
+    openSheet("editor"); return;
+  }
+  if (a === "strings-inc" || a === "strings-dec") {
+    const d = state.draft;
+    if (a === "strings-inc" && d.strings.length < 8) d.strings.push(64);
+    if (a === "strings-dec" && d.strings.length > 1) d.strings.pop();
+    renderSheet(); return;
+  }
+  if (a === "save-preset") {
+    const d = state.draft;
+    if (!d.name.trim()) return;
+    if (d.id) {
+      const p = state.custom.find(x => x.id === d.id);
+      if (p) { p.name = d.name.trim(); p.strings = [...d.strings]; }
+    } else {
+      const id = "custom." + Date.now();
+      state.custom.push({ id, instrumentId: d.instrumentId, name: d.name.trim(), strings: [...d.strings] });
+      state.settings.tuningId = id;
+    }
+    state.demo.stringIndex = 0;
+    state.draft = null;
+    state.overlay = "presets";
+    render(); renderSheet(); syncDemo(); return;
+  }
+  if (a === "set-ref") {
+    state.settings.reference = parseFloat(t.dataset.v);
+    render();
+    state.overlay = "reference"; renderSheet();
+    return;
+  }
+  if (a === "notation") { state.settings.notation = t.dataset.v; render(); renderSheet(); return; }
+  if (a === "theme") { state.theme = t.dataset.v; render(); renderSheet(); return; }
+  if (a === "language") { state.settings.language = t.dataset.v; render(); renderSheet(); return; }
+  if (a === "tolerance") { state.settings.tolerance = parseInt(t.dataset.v); renderSheet(); return; }
+  if (a === "sensitivity") { state.settings.sensitivity = t.dataset.v; renderSheet(); return; }
+  if (a === "toggle") {
+    const k = t.dataset.key;
+    state.settings[k] = !state.settings[k];
+    if (k === "bigType") render();
+    renderSheet(); return;
+  }
+  if (a === "select-string") {
+    state.demo.stringIndex = parseInt(t.dataset.i);
+    render(); return;
+  }
+  if (a === "grant" || a === "retry") { state.demo.state = "tracking"; render(); syncDemo(); return; }
+  if (a === "os-settings") { /* в прототипе — заглушка */ return; }
+
+  if (a === "device") { state.device = t.dataset.v; render(); syncDemo(); return; }
+  if (a === "reset") {
+    state.settings.reference = 442.0;
+    state.settings.instrumentId = "guitar";
+    state.settings.tuningId = "standard_e";
+    state.settings.notation = "latin";
+    state.settings.tolerance = 3;
+    state.settings.haptics = true;
+    state.settings.sound = false;
+    state.settings.lowTunings = false;
+    state.settings.bigType = false;
+    state.theme = "dark";
+    state.device = "phone";
+    state.custom = [];
+    state.demo = { state: "tracking", cents: -7, stringIndex: 0 };
+    closeSheet(); render(); syncDemo(); return;
+  }
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target.id === "demoCents") {
+    state.demo.cents = parseInt(e.target.value);
+    if (state.demo.state === "intune") state.demo.state = "tracking";
+    el("demoCentsVal").textContent = fmtCents(state.demo.cents);
+    syncDemo(); render(); return;
+  }
+  if (e.target.id === "draftName") {
+    state.draft.name = e.target.value;
+    const btn = document.querySelector('[data-action="save-preset"]');
+    if (btn) btn.disabled = !state.draft.name.trim();
+    return;
+  }
+  if (e.target.matches("[data-string]")) {
+    state.draft.strings[parseInt(e.target.dataset.string)] = parseInt(e.target.value);
+    return;
+  }
+});
+
+document.addEventListener("change", (e) => {
+  if (e.target.id === "demoState") {
+    state.demo.state = e.target.value;
+    if (state.demo.state === "intune") state.demo.cents = 0;
+    syncDemo(); render(); return;
+  }
+  if (e.target.id === "demoString") {
+    state.demo.stringIndex = parseInt(e.target.value);
+    render(); return;
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeSheet();
+});
+
+/* ---------- демо-панель ---------- */
+function syncDemo() {
+  const sel = el("demoState");
+  sel.value = state.demo.state;
+  el("demoCents").value = state.demo.state === "intune" ? 0 : state.demo.cents;
+  el("demoCents").disabled = state.demo.state !== "tracking";
+  el("demoCentsVal").textContent = fmtCents(state.demo.state === "intune" ? 0 : state.demo.cents);
+  el("segDevice").querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", b.dataset.v === state.device));
+  el("segTheme").querySelectorAll("button").forEach(b =>
+    b.classList.toggle("on", b.dataset.v === state.theme));
+
+  const t = tuning();
+  if (!t) {
+    el("demoString").innerHTML = `<option>${T("no_strings")}</option>`;
+    el("demoString").disabled = true;
+  } else {
+    const cur = currentStringIndex();
+    el("demoString").innerHTML = t.strings.map((m, i) =>
+      `<option value="${i}" ${i === cur ? "selected" : ""}>${i + 1}-я · ${noteFull(m)}</option>`).join("");
+    el("demoString").disabled = false;
+  }
+
+  el("scrim").classList.toggle("show", !!state.overlay);
+  el("sheet").classList.toggle("show", !!state.overlay);
+}
+
+/* ---------- ширина шкалы ---------- */
+const ro = new ResizeObserver(() => { renderTunerSafe(); });
+function renderTunerSafe() {
+  if (state.demo.state === "noperm" || state.demo.state === "error") return;
+  const cents = state.demo.state === "intune" ? 0 : state.demo.cents;
+  drawGauge(el("gauge"), cents, state.demo.state === "intune",
+            state.demo.state === "silent" ? "idle" :
+            state.demo.state === "uncertain" ? "dim" : "active");
+}
+ro.observe(el("app"));
+
+/* ---------- старт ---------- */
+// Прямые ссылки для показа состояний: prototype.html#desktop&light&state=intune&overlay=settings
+(function applyHash(){
+  const h = location.hash.slice(1);
+  if (!h) return;
+  h.split("&").forEach(part => {
+    if (part === "desktop" || part === "phone") state.device = part;
+    else if (part === "light" || part === "dark") state.theme = part;
+    else if (part.startsWith("state=")) state.demo.state = part.slice(6);
+    else if (part.startsWith("cents=")) state.demo.cents = parseInt(part.slice(6), 10);
+    else if (part.startsWith("instrument=")) state.settings.instrumentId = part.slice(11);
+    else if (part.startsWith("tuning=")) state.settings.tuningId = part.slice(7);
+    else if (part.startsWith("preset=")) { state.settings.tuningId = part.slice(7); }
+    else if (part.startsWith("lang=")) state.settings.language = part.slice(5);
+    else if (part.startsWith("overlay=")) state.overlay = part.slice(8);
+  });
+})();
+
+if (location.hash.includes("instant")) document.body.classList.add("no-anim");
+
+render();
+syncDemo();
+
+if (state.overlay) {
+  if (state.overlay === "editor") {
+    state.draft = { id: null, name: "", strings: [40,45,50,55,59,64] };
+  }
+  el("sheet").classList.add("show");
+  el("scrim").classList.add("show");
+  renderSheet();
+}
+
+window.proto = { state, render, syncDemo, openSheet, closeSheet };
+</script>
+</body>
+</html>

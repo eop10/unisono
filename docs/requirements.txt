@@ -1,0 +1,8 @@
+# Сборка документации: Sphinx + MyST (Markdown) + тема alabaster.
+# alabaster идёт в комплекте со Sphinx, отдельная установка не нужна.
+sphinx>=7.2,<10
+myst-parser>=3.0
+
+# Необязательно: живая перезагрузка для `make live`.
+# sphinx-autobuild
+linkify-it-py>=2.0

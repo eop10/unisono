@@ -1,0 +1,23 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../fonts.css">
+<style>
+  html,body{margin:0;background:#E4E0D8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#16181A}
+  .wrap{padding:26px 30px}
+  h1{font-size:13px;font-weight:600;margin:0 0 14px}
+  .row{display:flex;gap:10px;align-items:flex-end;margin-bottom:18px}
+  .cell{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .dark{background:#0E0F10;border-radius:14px;padding:14px;display:flex;align-items:center;justify-content:center}
+  .light{background:#F3F0EA;border-radius:14px;padding:14px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px #D8D2C6}
+  .lbl{font:400 8px/1 "JetBrains Mono",monospace;color:#6E6A62}
+</style></head><body><div class="wrap">
+<h1>Unisono · проверка размеров (1024 → 16)</h1>
+<div class="row" id="darkRow"></div>
+<div class="row" id="lightRow"></div>
+<script>
+  const sizes=[256,128,64,48,32,24,16];
+  const mk=(row,cls)=>{ row.innerHTML = sizes.map(s=>`
+    <div class="cell"><div class="${cls}"><img src="../png/icon-1024.png" width="${s}" height="${s}" style="display:block"></div>
+    <span class="lbl">${s}</span></div>`).join(''); };
+  mk(document.getElementById('darkRow'),'dark');
+  mk(document.getElementById('lightRow'),'light');
+</script>
+</div></body></html>

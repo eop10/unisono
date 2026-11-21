@@ -1,0 +1,21 @@
+%% Карта экранов и переходов.
+%% Рендер: tools/render-diagrams.sh, результат: source/diagrams/nav.png
+flowchart TB
+    Start(["Запуск"]) --> Perm{"Доступ<br/>к микрофону?"}
+    Perm -- "нет" --> PermScreen["Экран разрешения<br/>объяснение + кнопка"]
+    PermScreen -- "Открыть настройки" --> OS["Системные настройки"]
+    OS -. "возврат в ON_RESUME" .-> Perm
+    Perm -- "да" --> Tuner["Тюнер — главный экран"]
+
+    Tuner -- "чип инструмента" --> Sheet["Инструмент · Строй"]
+    Sheet -- "другой инструмент" --> Sheet
+    Sheet -- "выбрать строй" --> Tuner
+    Sheet -- "хроматический" --> Tuner
+    Sheet -- "новый строй" --> Editor["Редактор строя"]
+    Editor -- "сохранить" --> Sheet
+
+    Tuner -- "шестерёнка" --> Settings["Настройки"]
+    Settings -- "инструменты и строи" --> Sheet
+    Settings -- "опорная частота" --> A4["Список A4<br/>и ввод с клавиатуры"]
+    A4 --> Settings
+    Settings --> Tuner

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Guitar Tuner — макет A+C</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  :root{
+    --bg:#0E0F10; --surface:#141618; --line:#2A2D30; --line2:#3A3E42;
+    --text:#E8E6E1; --muted:#8A8F94; --brass:#C8A15A; --red:#C4553B; --warn:#C98A3B;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:#E4E0D8; color:#16181A; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+  .stage{min-height:100vh; display:flex; align-items:center; justify-content:center; gap:56px; padding:52px 56px 44px;}
+  .item{display:flex; flex-direction:column; align-items:center; gap:16px;}
+  .caption{font:500 11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.09em; text-transform:uppercase; color:#6E6A62;}
+
+  /* ---------- телефон ---------- */
+  .phone{width:390px; height:844px; background:#050607; border-radius:46px; padding:10px;
+         box-shadow:0 30px 60px rgba(0,0,0,.28), 0 2px 0 rgba(255,255,255,.35) inset;}
+  .screen{position:relative; width:370px; height:824px; background:var(--bg); border-radius:38px;
+          overflow:hidden; color:var(--text); display:flex; flex-direction:column;
+          padding:16px 24px 22px;}
+  .island{position:absolute; top:12px; left:50%; transform:translateX(-50%); width:96px; height:26px; background:#000; border-radius:14px;}
+
+  /* ---------- общие блоки ---------- */
+  .topbar{display:flex; align-items:center; justify-content:space-between; height:20px; margin-top:28px;}
+  .preset{display:flex; align-items:center; gap:7px; font:500 10.5px/1 ui-monospace,Menlo,monospace;
+          letter-spacing:.1em; color:var(--muted); text-transform:uppercase;}
+  .preset b{color:var(--text); font-weight:500;}
+  .caret{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid var(--muted);}
+  .a4{display:flex; align-items:baseline; gap:5px; font:400 10.5px/1 ui-monospace,Menlo,monospace; letter-spacing:.1em; color:var(--muted);}
+  .a4 b{color:var(--brass); font-weight:500; letter-spacing:.04em;}
+
+  .center{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0; margin-top:-4px;}
+
+  .note{position:relative; font-family:"Roboto Flex","Helvetica Neue",sans-serif; font-weight:400;
+        line-height:.8; letter-spacing:-.03em; color:var(--text);}
+  .note .oct{position:absolute; font-family:"JetBrains Mono",monospace; font-weight:400;
+             color:var(--muted); letter-spacing:0;}
+
+  .freq{display:flex; align-items:baseline; justify-content:center; gap:8px;
+        font-family:"JetBrains Mono",monospace; font-variant-numeric:tabular-nums;}
+  .freq .val{font-size:19px; color:var(--text);}
+  .freq .unit{font-size:10px; color:var(--muted); letter-spacing:.06em;}
+  .freq .sep{font-size:10px; color:#5C6268;}
+  .freq .target{font-size:10px; color:#5C6268; letter-spacing:.04em;}
+
+  .gauge{display:block;}
+  .gauge text{font-family:"JetBrains Mono",monospace;}
+
+  .centsrow{display:flex; align-items:flex-end; justify-content:center; gap:10px;}
+  .cents{font-family:"JetBrains Mono",monospace; font-variant-numeric:tabular-nums; font-size:46px;
+         line-height:1; letter-spacing:-.02em; color:var(--text);}
+  .centslbl{font:400 9px/1.35 ui-monospace,Menlo,monospace; letter-spacing:.14em; color:var(--muted);
+            text-transform:uppercase; padding-bottom:5px;}
+  .in-tune .cents, .in-tune .centslbl{color:var(--brass);}
+
+  .strings{display:flex; justify-content:center; gap:8px;}
+  .str{width:44px; height:44px; border:1px solid var(--line); border-radius:6px;
+       display:flex; align-items:center; justify-content:center; position:relative;
+       font:500 13px/1 ui-monospace,Menlo,monospace; color:#9AA0A5;}
+  .str.on{color:var(--brass); border-color:#4A4130;}
+  .str.on::after{content:""; position:absolute; left:8px; right:8px; bottom:-1px; height:2px; background:var(--brass);}
+
+  .bottom{display:flex; align-items:center; justify-content:space-between; gap:12px; height:44px;}
+  .level{display:flex; align-items:flex-end; gap:3px; height:16px;}
+  .level i{width:3px; background:#3A3E42; border-radius:1px;}
+  .level i:nth-child(1){height:5px} .level i:nth-child(2){height:8px}
+  .level i:nth-child(3){height:11px} .level i:nth-child(4){height:13px} .level i:nth-child(5){height:16px}
+  .level i.lit{background:#8A8F94;}
+  .status{flex:1; display:flex; align-items:center; gap:8px; font:500 10px/1 ui-monospace,Menlo,monospace;
+          letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+  .status .dot{width:5px; height:5px; background:var(--red); border-radius:50%;}
+  .in-tune .status{color:var(--brass);}
+  .in-tune .status .dot{background:var(--brass);}
+  .tone{width:44px; height:36px; border:1px solid var(--line); border-radius:6px; display:flex;
+        align-items:center; justify-content:center; font:500 9px/1 ui-monospace,Menlo,monospace;
+        letter-spacing:.12em; color:#9AA0A5;}
+
+  /* ---------- окно macOS ---------- */
+  .window{width:900px; height:640px; background:var(--bg); border-radius:12px; overflow:hidden;
+          box-shadow:0 30px 60px rgba(0,0,0,.25); color:var(--text); display:flex; flex-direction:column;}
+  .titlebar{height:38px; display:flex; align-items:center; padding:0 14px; gap:8px;
+            background:#0B0C0D; border-bottom:1px solid #1B1D1F;}
+  .lights{display:flex; gap:7px;}
+  .lights i{width:11px; height:11px; border-radius:50%;}
+  .lights i:nth-child(1){background:#FF5F57} .lights i:nth-child(2){background:#FEBC2E}
+  .lights i:nth-child(3){background:#28C840}
+  .title{flex:1; text-align:center; font:500 10px/1 ui-monospace,Menlo,monospace;
+         letter-spacing:.12em; color:#5C6268; text-transform:uppercase; margin-right:48px;}
+  .winbody{flex:1; display:flex; flex-direction:column; padding:20px 56px 24px;}
+
+  .winbody .topbar{margin-top:0;}
+  .winbody .center{justify-content:center; gap:2px; margin-top:-26px;}
+  .winbody .note{font-size:150px;}
+  .winbody .note .oct{font-size:22px; top:-6px; right:-26px;}
+  .winbody .freq .val{font-size:17px;}
+  .winbody .cents{font-size:36px;}
+  .winbody .strings{position:relative; margin-top:2px;}
+  .winbody .bottom{height:38px; margin-top:6px;}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- ================= Android ================= -->
+  <div class="item">
+    <div class="phone">
+      <div class="screen">
+        <div class="island"></div>
+
+        <div class="topbar">
+          <div class="preset">Standard <b>E</b><span class="caret"></span></div>
+          <div class="a4"><span>A4</span><b>442.0</b><span>Гц</span></div>
+        </div>
+
+        <div class="center">
+          <div class="note" style="font-size:210px; font-variation-settings:'wght' 480,'wdth' 106,'slnt' -2.6,'opsz' 144;">
+            E<span class="oct" style="font-size:26px; top:-4px; right:-24px;">2</span>
+          </div>
+
+          <div class="freq" style="margin-top:18px;">
+            <span class="val">82.1</span><span class="unit">ГЦ</span>
+            <span class="sep">/</span><span class="target">82.4</span>
+          </div>
+
+          <svg class="gauge" id="g-mobile" width="330" height="88" viewBox="0 0 330 88" role="img" aria-label="Шкала: минус 7 центов"></svg>
+
+          <div class="centsrow" style="margin-top:2px;">
+            <div class="cents">−07</div>
+            <div class="centslbl">центов</div>
+          </div>
+        </div>
+
+        <div class="strings" style="margin-bottom:18px;">
+          <div class="str on">E</div><div class="str">A</div><div class="str">D</div>
+          <div class="str">G</div><div class="str">B</div><div class="str">E</div>
+        </div>
+
+        <div class="bottom">
+          <div class="level"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i><i></i></div>
+          <div class="status"><span class="dot"></span>ниже · −7</div>
+          <div class="tone">ТОН</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption">Android · 390×844 · строй ниже</div>
+  </div>
+
+  <!-- ================= macOS ================= -->
+  <div class="item">
+    <div class="window in-tune">
+      <div class="titlebar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="title">Guitar Tuner</div>
+      </div>
+      <div class="winbody">
+        <div class="topbar">
+          <div class="preset">Standard <b>E</b><span class="caret"></span></div>
+          <div class="a4"><span>A4</span><b>442.0</b><span>Гц</span></div>
+        </div>
+
+        <div class="center">
+          <div class="note" style="font-variation-settings:'wght' 720,'wdth' 98,'slnt' 0,'opsz' 144;">
+            E<span class="oct">2</span>
+          </div>
+
+          <div class="freq" style="margin-top:14px;">
+            <span class="val">82.4</span><span class="unit">ГЦ</span>
+            <span class="sep">/</span><span class="target">82.4</span>
+          </div>
+
+          <svg class="gauge" id="g-desktop" width="560" height="88" viewBox="0 0 560 88" role="img" aria-label="Шкала: в строе, ноль"></svg>
+
+          <div class="centsrow" style="margin-top:0;">
+            <div class="cents">+00</div>
+            <div class="centslbl">центов</div>
+          </div>
+        </div>
+
+        <div class="strings" style="margin-bottom:10px;">
+          <div class="str on">E</div><div class="str">A</div><div class="str">D</div>
+          <div class="str">G</div><div class="str">B</div><div class="str">E</div>
+        </div>
+
+        <div class="bottom">
+          <div class="level"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i></div>
+          <div class="status"><span class="dot"></span>в строе</div>
+          <div class="tone">ТОН</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption">macOS · 900×640 · в строе</div>
+  </div>
+
+</div>
+
+<script>
+function drawGauge(el, {width, cents, inTune}) {
+  const NS = "http://www.w3.org/2000/svg";
+  const H = 88, base = 46, pad = 16;
+  const x = c => width / 2 + c * ((width / 2 - pad) / 50);
+
+  const add = (tag, attrs) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    el.appendChild(n);
+    return n;
+  };
+
+  // базовая линия
+  add("line", {x1: pad - 4, y1: base, x2: width - pad + 4, y2: base, stroke: "#2A2D30", "stroke-width": 1});
+
+  // грубая шкала: шаг 5 центов
+  for (let c = -50; c <= 50; c += 5) {
+    const major = c % 25 === 0;
+    const len = major ? 13 : (c % 10 === 0 ? 9 : 6);
+    add("line", {x1: x(c), y1: base - len, x2: x(c), y2: base - 1,
+                 stroke: major ? "#5A6065" : "#3A3E42", "stroke-width": major ? 1.2 : 1});
+  }
+
+  // тонкая шкала: ±5, шаг 1 цент
+  for (let c = -5; c <= 5; c++) {
+    const edge = Math.abs(c) === 5;
+    add("line", {x1: x(c), y1: base + 1, x2: x(c), y2: base + (edge ? 6 : 3),
+                 stroke: edge ? "#6B7075" : "#565C61", "stroke-width": 1});
+  }
+
+  // подписи
+  [[-50,"−50"],[-25,"−25"],[0,"0"],[25,"+25"],[50,"+50"]].forEach(([c,t]) => {
+    const tx = add("text", {x: x(c), y: base + 21, "text-anchor": "middle",
+                            "font-size": 9, fill: c === 0 ? "#C8A15A" : "#7E858B",
+                            "letter-spacing": ".06em"});
+    tx.textContent = t;
+  });
+
+  // ноль и границы допуска
+  add("line", {x1: x(0), y1: base - 20, x2: x(0), y2: base + 8,
+               stroke: "#C8A15A", "stroke-width": 1, opacity: inTune ? 0.9 : 0.4});
+  [-3, 3].forEach(c => add("line", {x1: x(c), y1: base - 18, x2: x(c), y2: base - 10,
+                                    stroke: "#C8A15A", "stroke-width": 1, opacity: 0.45}));
+
+  // игла
+  const nx = x(cents);
+  const color = inTune ? "#C8A15A" : "#E8E6E1";
+  add("line", {x1: nx, y1: base - 27, x2: nx, y2: base + 9, stroke: color, "stroke-width": 1.6});
+  add("circle", {cx: nx, cy: base + 9, r: 2.2, fill: color});
+}
+
+drawGauge(document.getElementById("g-mobile"), {width: 330, cents: -7, inTune: false});
+drawGauge(document.getElementById("g-desktop"), {width: 560, cents: 0, inTune: true});
+</script>
+</body>
+</html>

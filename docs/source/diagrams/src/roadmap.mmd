@@ -1,0 +1,39 @@
+%% План MVP на Rust. Рендер: tools/render-diagrams.sh
+gantt
+    title MVP: один разработчик, 32–38 рабочих дней
+    dateFormat YYYY-MM-DD
+    axisFormat %d.%m
+    excludes weekends
+
+    section Каркас
+    Каркас :a1, 2026-11-23, 3d
+
+    section Ядро и DSP
+    Инструменты и строи :a2, after a1, 2d
+    NSDF :a3, after a2, 3d
+    Тесты :a4, after a2, 4d
+
+    section UI
+    Svelte UI :u1, after a1, 4d
+    Листы и настройки :u2, after u1, 3d
+
+    section Айдентика
+    Иконки и README :i1, after u1, 1d
+
+    section Android
+    oboe + NDK :b1, after a3, 3d
+    Разрешения :b2, after b1, 2d
+
+    section macOS
+    cpal + окно :c1, after a3, 2d
+    DMG :c2, after c1, 2d
+
+    section Windows
+    WASAPI + NSIS :w1, after c1, 2d
+
+    section Linux
+    ALSA + AppImage :l1, after w1, 3d
+
+    section Выпуск
+    Полировка :d1, after b2, 2d
+    Бета :d2, after d1, 2d

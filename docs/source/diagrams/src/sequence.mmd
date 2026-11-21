@@ -1,0 +1,37 @@
+%% Последовательность запуска и одного цикла настройки (Rust + Tauri).
+%% Рендер: tools/render-diagrams.sh, результат: source/diagrams/sequence.png
+sequenceDiagram
+    autonumber
+    actor U as Пользователь
+    participant UI as WebView (Svelte)
+    participant B as Tauri bridge
+    participant A as Audio (cpal/oboe)
+    participant N as Analyzer (thread)
+    participant DSP as PitchDetector
+
+    U->>UI: открывает приложение
+    UI->>B: invoke start_listening
+    B->>A: start(48 кГц, f32, mono)
+    A-->>B: sample_rate
+    B->>N: spawn + config по пресету
+    B-->>UI: Channel<TunerState>
+
+    loop каждые ~21 мс
+        A->>N: rtrb, кадр 1024
+        N->>DSP: detect(window)
+        DSP-->>N: f0, clarity
+        N-->>B: watch<TunerState>
+        B-->>UI: Channel (≤60 Гц)
+        UI->>UI: перерисовка
+    end
+
+    U->>UI: щипок 6-й струны
+    B-->>UI: E2 · 82,1 Гц · −7 центов
+    U->>UI: подкручивает колок
+    B-->>UI: E2 · 82,4 Гц · 0 (250 мс)
+    UI->>U: «В строе» + вибрация
+
+    U->>UI: уход в фон
+    UI->>B: invoke stop_listening
+    B->>A: stop + drop stream
+    B-->>UI: Silent

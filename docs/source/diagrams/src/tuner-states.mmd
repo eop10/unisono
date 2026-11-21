@@ -1,0 +1,26 @@
+%% Состояния движка тюнера.
+%% Рендер: tools/render-diagrams.sh, результат: source/diagrams/tuner-states.png
+stateDiagram-v2
+    direction TB
+    [*] --> NoPermission: первый запуск
+
+    NoPermission --> Silent: разрешение выдано
+    NoPermission --> NoPermission: отказ или отзыв
+
+    Error --> Silent: повторить
+    Silent --> Error: занят
+
+    Silent --> Uncertain: сигнал есть, clarity < 0,60
+    Uncertain --> Tracking: clarity ≥ 0,60
+    Uncertain --> Silent: сигнал пропал, 400 мс
+
+    Tracking --> InTune: |c| ≤ 3 цента, 250 мс
+    InTune --> Tracking: |c| > 3 цента
+    Tracking --> Silent: RMS < −50 dBFS, 400 мс
+    InTune --> Silent: RMS < −50 dBFS, 400 мс
+
+    note right of InTune
+        Вибрация (Android),
+        зелёный маркер,
+        текст «В строе»
+    end note

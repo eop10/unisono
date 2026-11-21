@@ -1,0 +1,32 @@
+# Rust
+target/
+**/target/
+
+# Node / Tauri
+node_modules/
+ui/node_modules/
+ui/dist/
+dist/
+npm-debug.log*
+
+# Python / Sphinx
+docs/.venv/
+docs/build/
+docs/dist/
+__pycache__/
+*.pyc
+.doctrees/
+
+# Android
+*.jks
+*.keystore
+keystore.properties
+gen/android/app/build/
+gen/android/.gradle/
+gen/android/local.properties
+
+# macOS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
