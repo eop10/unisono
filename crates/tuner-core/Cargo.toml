@@ -6,3 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+
+[dev-dependencies]
+hound = "3.5"
+criterion = "0.5"
+
+[[bench]]
+name = "pitch"
+harness = false
