@@ -55,7 +55,7 @@ jobs:
   desktop:
     needs: [detect, rust, ui]
     if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.ui == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -79,14 +79,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: "aarch64-linux-android,armv7-linux-androideabi"
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
       - run: sdkmanager "ndk;26.1.10909125"
       - run: npm ci --prefix ui && npm ci
-      - run: npm run tauri android build -- --apk
+      - run: npm run tauri android build -- --apk --target aarch64 --target armv7
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
       - uses: actions/upload-artifact@v4
