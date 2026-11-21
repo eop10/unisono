@@ -1,0 +1,104 @@
+# Prompt for Qwen: stage 2 fixes + stage 3 UI
+
+Ты — разработчик проекта **Unisono**. Репозиторий: https://github.com/eop10/unisono
+Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`.
+
+Перед работой прочитай:
+1. `HANDOFF.md`
+2. `docs/source/02_requirements.md`
+3. `docs/source/05_data.md`
+4. `docs/source/04_dsp.md` (4.2–4.4)
+5. `docs/source/06_ui.md` (6.1–6.9)
+6. `docs/source/09_plan.md`
+7. `design/prototype.html` — эталон интерфейса (кликабельный)
+
+## Часть 0. Исправления по ревью этапа 2 (до нового этапа)
+
+### 0.1. LevelGate — настоящий гистерезис (блокер)
+Сейчас `LevelGate::check(&self, db)` не хранит состояние: это мёртвая зона, а не гистерезис.
+Сделай `open: bool` и `check(&mut self, db)`:
+
+- открыт: `db < -50` → `BelowSilence` (закрыть); иначе `Open`;
+- закрыт: `db >= -45` → `Open` (открыть); `db >= -50` → `InHysteresis`; иначе `BelowSilence`.
+
+`PitchDetector` должен сохранять состояние гейта между кадрами.
+Тесты: `open(-20)=Open`, `open(-47)=Open`, `open(-51)=BelowSilence`,
+`closed(-47)=InHysteresis`, `closed(-45)=Open`, `closed(-51)=BelowSilence`.
+
+### 0.2. SmoothingFilter: медиана при чётном `len`
+Для `len < 5` при чётном количестве бери среднее двух центральных значений,
+а не верхний центральный. Добавь тесты на `len = 2` и `len = 4`.
+
+### 0.3. Хроматика и низкий диапазон
+При `window = 4096` и `f_min = 30` детектор формально ищет 30 Гц, но точность
+30–65 Гц не гарантируется. Добавь тест/комментарий: для 30–65 Гц нужен
+«Низкий диапазон» (16384). Поведение UI не меняй.
+
+### 0.4. `first_peak_above` → `Uncertain`
+Если гейт открыт, но пика нет, возвращай `Estimate::Uncertain { clarity: 0.0 }`,
+а не `None`. `None` остаётся только для `BelowSilence`. Обнови тесты.
+
+После фиксов: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`,
+`cargo test --release --test perf -- --ignored`. CI должен быть зелёным.
+Закрой issue #3 только после этого.
+
+## Часть 1. Этап 3 — UI (issue #4)
+
+Задача: собрать интерфейс на Svelte 5 + TypeScript по `docs/source/06_ui.md`
+и `design/prototype.html`. Без аудио и без storage: данные каталога — из ядра,
+состояние тюнера — мок.
+
+### 1.1. Каталог из ядра, без дублирования в TS
+- Добавь `serde` в `tuner-core` и `Serialize` для `Localized`, `InstrumentKind`,
+  `Instrument`, `LocalizedName`, `Tuning` (только Serialize; Deserialize не нужен).
+- В `src-tauri` добавь команду `get_catalog`, возвращающую инструменты и строи
+  (id, имена ru/en, kind, strings, built_in).
+- UI вызывает `invoke("get_catalog")`; для vitest — мок каталога.
+- Не копируй 23 строя в TypeScript.
+
+### 1.2. Экраны
+- **TunerScreen**: чип «Инструмент · Строй», чип A4, шестерёнка, буква ноты + октава,
+  измеренная/целевая частота, нониус (SVG), центы (`−7`, `+12`, `0`), статус
+  (`НИЖЕ`/`ВЫШЕ`/`В СТРОЕ`/`СЛУШАЮ…`), чипы струн, индикатор уровня.
+  В хроматике струны скрыты.
+- **InstrumentSheet**: 12 инструментов, строи выбранного инструмента, «Новый строй».
+- **ReferenceSheet**: ввод с клавиатуры (`,.`), слайдер 400–480, список с пояснениями.
+- **SettingsSheet**: A4, инструменты/строи, нотация, тема, язык RU/EN, крупный шрифт,
+  допуск, чувствительность, низкий диапазон, вибрация, звук, «О программе».
+- **TuningEditor**: имя, 1–8 струн, выбор MIDI 21–96, валидация 5.7.
+- Удали стартовую страницу Vite/Svelte, `Counter`, `hero`, внешние ссылки.
+- `index.html`: `lang="ru"`, `<title>Unisono</title>`.
+
+### 1.3. Состояние и i18n
+- Svelte-стор: `instrumentId`, `tuningId`, настройки, `TunerState` (мок), overlay.
+- Словарь RU/EN; числа: `82,4` в RU, `82.4` в EN; названия инструментов/строёв — из каталога.
+- Мок `TunerState`: E2, −7 центов; переключение состояний для проверки
+  (можно через dev-панель, скрытую в production, или query `?demo`).
+- Никакой логики DSP/аудио в UI.
+
+### 1.4. Токены и графика
+- Палитра и типографика из 6.8.3: `#0E0F10`, `#E8E6E1`, `#C8A15A`, Roboto Flex + JetBrains Mono.
+- Шрифты положи в `ui/public/fonts` (взять из `design/fonts`), `@font-face` локально.
+- Нониус — SVG: ±50, риски 5/1, метки ±3, ноль латунный, подписи НИЖЕ/ВЫШЕ.
+- Буква: вес 560 → 720 при «в строе»; без наклона.
+- `prefers-reduced-motion`: отключить пружину и смену веса.
+
+### 1.5. Безопасность и доступность
+- `tauri.conf.json`: заменить `csp: null` на строгий CSP:
+  `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ipc: http://ipc.localhost`.
+- `aria` для кнопок, шкалы (`role="slider"`, `aria-valuemin/max/now`), фокус-ловушка в листах,
+  Escape закрывает, возврат фокуса.
+- Контраст ≥ 4,5:1; «в строе» дублируется текстом и формой.
+
+### 1.6. Тесты
+- `vitest`: форматирование центов/частот, переключение языка, выбор инструмента/строя,
+  валидация редактора, хроматика скрывает струны.
+- `npm --prefix ui run check`, `test`, `build` — зелёные.
+- Добавь `npm --prefix ui run test` в CI ui-джобу.
+
+## Правила
+
+- Не трогай `brand/`, `design/`, `docs/` (кроме случая, если docs противоречат коду — тогда сообщи).
+- Не добавляй аудио, storage, DSP в UI.
+- Маленькие коммиты, CI зелёный.
+- В конце — отчёт: что сделано, тесты, что осталось, и предложение следующего шага (#5 macOS).
