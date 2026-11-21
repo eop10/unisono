@@ -1,0 +1,8 @@
+[package]
+name = "tuner-core"
+description = "DSP and music theory: pitch detection, notes, instruments, tunings. No I/O, no platform code."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]

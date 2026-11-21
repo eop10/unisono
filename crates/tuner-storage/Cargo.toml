@@ -1,0 +1,8 @@
+[package]
+name = "tuner-storage"
+description = "Settings and tuning presets: settings.json, presets.json, schema migrations, atomic writes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
