@@ -69,7 +69,12 @@ impl SmoothingFilter {
             }
             sorted[j] = v;
         }
-        let median = sorted[self.len / 2];
+        let median = if self.len % 2 == 1 {
+            sorted[self.len / 2]
+        } else {
+            // Чётное количество: среднее двух центральных, не верхний центральный.
+            (sorted[self.len / 2 - 1] + sorted[self.len / 2]) / 2.0
+        };
 
         let s = match self.ema {
             None => median,
@@ -124,6 +129,25 @@ mod tests {
         }
         let cents = 1200.0 * (out / 466.16).log2();
         assert!(cents.abs() < 1.0, "cents = {cents}");
+    }
+
+    #[test]
+    fn median_even_len_averages_two_centers() {
+        // len = 2: y = [0, 1200] → медиана 600; EMA = 0.3·600 + 0.7·0 = 180.
+        let mut s = SmoothingFilter::new();
+        s.push(Some(440.0), HOP_MS);
+        let out = s.push(Some(880.0), HOP_MS).unwrap();
+        let expected2 = 440.0 * 2f64.powf(180.0 / 1200.0);
+        assert!((out - expected2).abs() < 1e-9, "out = {out}");
+        // len = 4: y = [0, 1200, 0, 1200] → медиана 600 (среднее двух центральных);
+        // EMA: len3 med 0 → 0.7·180 = 126; len4 → 0.3·600 + 0.7·126 = 268.2.
+        let mut s = SmoothingFilter::new();
+        s.push(Some(440.0), HOP_MS);
+        s.push(Some(880.0), HOP_MS);
+        s.push(Some(440.0), HOP_MS);
+        let out = s.push(Some(880.0), HOP_MS).unwrap();
+        let expected4 = 440.0 * 2f64.powf(268.2 / 1200.0);
+        assert!((out - expected4).abs() < 1e-9, "out = {out}");
     }
 
     #[test]
