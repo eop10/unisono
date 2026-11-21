@@ -20,10 +20,26 @@ pub fn nsdf(frame: &[f32], prefix: &[f64], tau_min: usize, tau_max: usize, out: 
     let total = prefix[n];
     for tau in tau_min..=tau_max {
         let m = n - tau;
-        let mut num = 0f32;
-        for j in 0..m {
-            num += frame[j] * frame[j + tau];
+        // Четыре независимых аккумулятора: разрывает цепочку зависимостей
+        // по сложению (латентность FMA) и даёт LLVM векторизовать цикл;
+        // заодно точнее последовательной суммы (4.5).
+        let mut s0 = 0f32;
+        let mut s1 = 0f32;
+        let mut s2 = 0f32;
+        let mut s3 = 0f32;
+        let mut j = 0;
+        while j + 4 <= m {
+            s0 += frame[j] * frame[j + tau];
+            s1 += frame[j + 1] * frame[j + 1 + tau];
+            s2 += frame[j + 2] * frame[j + 2 + tau];
+            s3 += frame[j + 3] * frame[j + 3 + tau];
+            j += 4;
         }
+        while j < m {
+            s0 += frame[j] * frame[j + tau];
+            j += 1;
+        }
+        let num = (s0 + s1) + (s2 + s3);
         // Σ_{j<m} x_j² + Σ_{j<m} x_{j+τ}² = prefix[m] + (prefix[n] − prefix[τ]).
         let den = prefix[m] + total - prefix[tau];
         out[tau] = if den > 0.0 {
