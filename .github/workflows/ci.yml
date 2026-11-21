@@ -68,7 +68,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dmg
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: target/release/bundle/dmg/*.dmg
 
   android:
     needs: [detect, rust, ui]
@@ -83,7 +83,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - run: sdkmanager "ndk;26.1.10909125"
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.1.10909125"
       - run: npm ci --prefix ui && npm ci
       - run: npm run tauri android build -- --apk --target aarch64 --target armv7
         env:
