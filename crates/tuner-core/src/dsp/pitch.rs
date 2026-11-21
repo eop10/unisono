@@ -51,6 +51,10 @@ impl DetectorConfig {
     }
 
     /// Конфиг хроматического режима: 4096, с «Низким диапазоном» — 16384.
+    ///
+    /// Внимание: при 4096 и `f_min = 30` детектор формально ищет 30 Гц, но
+    /// точность ±3 цента в 30–65 Гц не гарантируется (мало периодов в окне,
+    /// 4.2.2–4.2.3). Для низких нот хроматики нужен «Низкий диапазон» (16384).
     pub fn for_chromatic(low_range: bool, fs: u32) -> Self {
         let window = InstrumentRegistry::chromatic_window(low_range) as usize;
         Self::new(window, fs, F_MIN_HZ)
@@ -83,9 +87,10 @@ impl PitchDetector {
         Self {
             nsdf: vec![0.0; config.window / 2 + 2],
             prefix: vec![0.0; config.window + 1],
-            gate: LevelGate {
-                gate_db: config.gate_db,
-                hysteresis_db: super::gate::GATE_HYSTERESIS_DB,
+            gate: {
+                let mut g = LevelGate::new();
+                g.gate_db = config.gate_db;
+                g
             },
             config,
         }
@@ -101,7 +106,8 @@ impl PitchDetector {
     pub fn process_frame(&mut self, raw: &mut [f32], fs: u32) -> Option<Estimate> {
         let n = self.config.window;
         if raw.len() < n {
-            return None;
+            // Неполный кадр: данных нет, цифр не показываем.
+            return Some(Estimate::Uncertain { clarity: 0.0 });
         }
         let frame = &mut raw[..n];
 
@@ -170,7 +176,11 @@ impl PitchDetector {
         }
 
         // 6. Правило McLeod: наименьший локальный максимум ≥ κ·n_max.
-        let peak = self.first_peak_above(self.config.kappa)?;
+        // Гейт открыт, но пика нет — сигнал непериодический: Uncertain, не None.
+        let peak = match self.first_peak_above(self.config.kappa) {
+            Some(p) => p,
+            None => return Some(Estimate::Uncertain { clarity: 0.0 }),
+        };
         let tau = self.parabolic_refine(peak);
         let mut f0 = fs as f32 / tau;
         let mut clarity = self.nsdf[peak].min(1.0);
@@ -366,6 +376,35 @@ mod tests {
     fn short_frame_is_not_analyzed() {
         let mut d = detector(4096, 82.41);
         let mut frame = sine(440.0, 1000, 0.1);
-        assert_eq!(d.process_frame(&mut frame, FS), None);
+        assert_eq!(
+            d.process_frame(&mut frame, FS),
+            Some(Estimate::Uncertain { clarity: 0.0 })
+        );
+    }
+
+    #[test]
+    fn gate_open_without_peak_is_uncertain_not_none() {
+        // 6000 Гц: истинный τ = 8 < tau_min; в диапазоне [34, 36] локальных
+        // максимумов нет → гейт открыт, пика нет → Uncertain { clarity: 0 }.
+        let mut d = PitchDetector::new(DetectorConfig::new(4096, FS, 1400.0));
+        let mut frame = sine(6000.0, 4096, 0.1);
+        assert_eq!(
+            d.process_frame(&mut frame, FS),
+            Some(Estimate::Uncertain { clarity: 0.0 })
+        );
+    }
+
+    #[test]
+    fn chromatic_4096_does_not_guarantee_30_65_hz() {
+        // 4096 при f_min = 30 ищет 30 Гц формально (tau_max 1702), но для
+        // точности ±3 цента в 30–65 Гц нужен «Низкий диапазон» → 16384 (4.2.3).
+        let base = DetectorConfig::for_chromatic(false, FS);
+        assert_eq!(base.window, 4096);
+        assert!(base.tau_max >= (FS as f32 / 30.0) as usize);
+        let low = DetectorConfig::for_chromatic(true, FS);
+        assert_eq!(low.window, 16384);
+        let reg = InstrumentRegistry::new();
+        let bass5 = reg.tuning("bass", "bass5").unwrap();
+        assert_eq!(InstrumentRegistry::window_size(bass5), 16384);
     }
 }
