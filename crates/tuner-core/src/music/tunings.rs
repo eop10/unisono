@@ -145,30 +145,30 @@ pub(crate) const TUNING_DEFS: &[TuningDef] = &[
         en: "Low-G",
         strings: &[55, 60, 64, 69],
     },
-    // Смычковые (4)
+    // Смычковые (4) — ID глобально уникальны (5.5)
     TuningDef {
-        id: "standard",
+        id: "violin_std",
         instrument_id: "violin",
         ru: "Стандарт",
         en: "Standard",
         strings: &[55, 62, 69, 76],
     },
     TuningDef {
-        id: "standard",
+        id: "viola_std",
         instrument_id: "viola",
         ru: "Стандарт",
         en: "Standard",
         strings: &[48, 55, 62, 69],
     },
     TuningDef {
-        id: "standard",
+        id: "cello_std",
         instrument_id: "cello",
         ru: "Стандарт",
         en: "Standard",
         strings: &[36, 43, 50, 57],
     },
     TuningDef {
-        id: "standard",
+        id: "contrabass_std",
         instrument_id: "contrabass",
         ru: "Стандарт",
         en: "Standard",
