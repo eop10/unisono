@@ -4,3 +4,5 @@
 //! файлы и платформы. `unsafe` запрещён.
 
 #![forbid(unsafe_code)]
+
+pub mod music;
