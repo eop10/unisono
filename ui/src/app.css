@@ -228,7 +228,7 @@ select {
 }
 .note.empty {
   font-size: 54px;
-  color: var(--dim);
+  color: var(--muted);
   letter-spacing: 0;
 }
 .big-type .note {
@@ -256,7 +256,8 @@ select {
 .freq .target,
 .freq .sep {
   font-size: 10px;
-  color: var(--dim);
+  /* Контраст ≥ 4,5:1 (6.9): вторичный текст — muted, dim только графика. */
+  color: var(--muted);
   letter-spacing: 0.05em;
 }
 .gauge {
@@ -282,7 +283,7 @@ select {
   opacity: 0.32;
 }
 .cents.empty {
-  color: var(--dim);
+  color: var(--muted);
 }
 .centslbl {
   font: 400 9px/1.5 var(--mono);
@@ -477,7 +478,7 @@ select {
   font: 500 10px/1 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--dim);
+  color: var(--muted);
 }
 .row {
   display: flex;
