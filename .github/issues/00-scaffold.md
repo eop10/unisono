@@ -7,7 +7,7 @@
 - [ ] `Cargo.toml` workspace: `crates/tuner-core`, `crates/tuner-audio`, `crates/tuner-storage`, `src-tauri`; edition 2021, `resolver = "2"`, release-профиль (`lto`, `codegen-units = 1`, `panic = "abort"`, `strip`).
 - [ ] `ui/`: Vite + Svelte 5 + TypeScript.
 - [ ] `npm run tauri init`: `productName = Unisono`, `identifier = app.unisono.tuner`, окно 900×640.
-- [ ] `npm run tauri android init`; `gen/android` коммитится.
+- [ ] `npm run tauri android init`; `src-tauri/gen/android` коммитится.
 - [ ] CI `.github/workflows/ci.yml` уже добавлен: джобы включатся, когда появятся `Cargo.toml` и `ui/package.json`.
 - [ ] Пустые приложения запускаются на macOS и Android; `cargo test` зелёный.
 

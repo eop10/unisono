@@ -29,7 +29,7 @@ pub use oboe_source::OboeSource as PlatformSource;
 
 ### 7.1.1. Проект и манифест
 
-Android-часть создаётся командой `tauri android init`: появляется `gen/android` (Gradle-проект,
+Android-часть создаётся командой `tauri android init`: появляется `src-tauri/gen/android` (Gradle-проект,
 `MainActivity`, манифест). Дальше правки идут в нём и коммитятся вместе с репозиторием.
 
 ```xml
@@ -97,7 +97,7 @@ pub fn open(sink: rtrb::Producer<f32>) -> Result<AudioStream, oboe::Error> {
 ### 7.1.3. Разрешения: без Kotlin не обойтись
 
 Это единственное место, где Rust не заменяет платформенный код: `RECORD_AUDIO` — опасное
-разрешение, его запрашивает Activity. В `gen/android` добавляется маленький плагин Tauri:
+разрешение, его запрашивает Activity. В `src-tauri/gen/android` добавляется маленький плагин Tauri:
 
 ```kotlin
 @TauriPlugin
@@ -172,7 +172,7 @@ keytool -genkeypair -v -keystore unisono-release.jks -alias unisono \
 ```
 
 Ключ и пароль хранятся в менеджере секретов и в бэкапе: потеря ключа означает, что обновление
-с тем же `applicationId` установить поверх нельзя. Настройка — в `gen/android/app/build.gradle.kts`
+с тем же `applicationId` установить поверх нельзя. Настройка — в `src-tauri/gen/android/app/build.gradle.kts`
 (`signingConfigs.release`); версия — `versionCode`/`versionName`.
 
 Требуется Android SDK, NDK (`ANDROID_NDK_HOME`), Rust-таргеты `aarch64-linux-android`,
@@ -268,7 +268,7 @@ pub fn open(sink: rtrb::Producer<f32>) -> Result<(cpal::Stream, u32), AudioError
 
 ```bash
 /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Тюнер слушает струну. Звук не записывается.'" \
-  "src-tauri/target/release/bundle/macos/Unisono.app/Contents/Info.plist"
+  "target/release/bundle/macos/Unisono.app/Contents/Info.plist"
 ```
 
 ### 7.2.3. Распространение без Apple Developer Program
@@ -281,7 +281,7 @@ Apple Developer Program нет, поэтому нет Developer ID и notarizati
 ```bash
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run tauri build -- --target universal-apple-darwin
-codesign --force --deep --sign - "src-tauri/target/universal-apple-darwin/release/bundle/macos/Unisono.app"
+codesign --force --deep --sign - "target/universal-apple-darwin/release/bundle/macos/Unisono.app"
 ```
 
 `codesign -s -` — ad-hoc подпись: она не убирает предупреждение Gatekeeper, но убирает
@@ -332,7 +332,7 @@ spctl -a -vvv -t install Unisono.app
 | --- | --- |
 | `brand/icon.icns` | `src-tauri/icons/icon.icns`, прописан в `bundle.icon` |
 | `brand/png/icon-32.png`, `icon-128.png`, `icon-256.png` | `src-tauri/icons/` |
-| `brand/android/mipmap-*` | `gen/android/app/src/main/res/` |
+| `brand/android/mipmap-*` | `src-tauri/gen/android/app/src/main/res/` |
 | `brand/android/ic_launcher.xml`, `colors.xml` | `res/mipmap-anydpi-v26/` и `res/values/` |
 
 Правила: иконка — из мастер-SVG, без ручной перерисовки; foreground adaptive занимает 82 % слоя,

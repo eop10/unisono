@@ -249,7 +249,7 @@ jobs:
       - run: npm --prefix ui run build
 
   desktop:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -259,7 +259,7 @@ jobs:
       - run: npm ci --prefix ui && npm ci
       - run: npm run tauri build
       - uses: actions/upload-artifact@v4
-        with: { name: dmg, path: src-tauri/target/release/bundle/dmg/*.dmg }
+        with: { name: dmg, path: target/release/bundle/dmg/*.dmg }
 
   android:
     if: github.event_name == 'push'
@@ -290,7 +290,7 @@ jobs:
       - run: npm ci --prefix ui && npm ci
       - run: npm run tauri build
       - uses: actions/upload-artifact@v4
-        with: { name: windows-installer, path: src-tauri/target/release/bundle/nsis/*.exe }
+        with: { name: windows-installer, path: target/release/bundle/nsis/*.exe }
 
   linux:
     runs-on: ubuntu-24.04
@@ -304,7 +304,7 @@ jobs:
       - run: npm ci --prefix ui && npm ci
       - run: npm run tauri build
       - uses: actions/upload-artifact@v4
-        with: { name: linux-packages, path: "src-tauri/target/release/bundle/{appimage,deb}/*" }
+        with: { name: linux-packages, path: "target/release/bundle/{appimage,deb}/*" }
 
   docs:
     runs-on: ubuntu-latest
@@ -330,13 +330,13 @@ jobs:
   производные, пересобираются скриптом, а не руками.
 - В репозитории лежат `brand/png/icon-1024…16.png`, `brand/icon.ico`, `brand/readme-header.png`, `brand/sizes.png`.
 - CI проверяет, что `icon.icns` существует и что в `tauri.conf.json` указан `icons/icon.icns`.
-- `gen/android` содержит `mipmap-anydpi-v26/ic_launcher.xml` с foreground/background/monochrome.
+- `src-tauri/gen/android` содержит `mipmap-anydpi-v26/ic_launcher.xml` с foreground/background/monochrome.
 
 ## 8.6. Релизный чек-лист
 
 **Android (GitHub Releases, без Google Play)**
 
-1. `versionCode`/`versionName` подняты в `gen/android/app/build.gradle.kts` и `tauri.conf.json`.
+1. `versionCode`/`versionName` подняты в `src-tauri/gen/android/app/build.gradle.kts` и `tauri.conf.json`.
 2. Release APK собран и подписан **своим** keystore; `apksigner verify` проходит.
 3. Keystore и пароль сохранены в менеджере секретов и в бэкапе (потеря = нет обновлений).
 4. Пройден чек-лист 8.4 на Android 8 и Android 14 (минимум два устройства), установка — sideload.

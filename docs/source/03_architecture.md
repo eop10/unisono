@@ -102,13 +102,13 @@ unisono/
 │   ├── capabilities/default.json
 │   ├── Info.plist              # NSMicrophoneUsageDescription
 │   ├── entitlements.plist
-│   └── icons/
+│   ├── icons/
+│   └── gen/android/            # создаётся `tauri android init`
 ├── ui/                         # Svelte + TS
 │   └── src/
 │       ├── lib/                TunerScreen.svelte, CentsGauge.svelte, InstrumentSheet.svelte
 │       ├── stores/             tuner.ts, settings.ts
 │       └── ipc/                channel.ts, commands.ts
-├── gen/android/                # создаётся `tauri android init`, Kotlin-шим
 ├── brand/                      # логотип, иконки, шапка README
 └── tools/gen_fixtures.py
 ```

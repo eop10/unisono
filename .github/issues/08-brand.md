@@ -6,7 +6,7 @@
 ## Задачи
 - [ ] `brand/icon.icns` в `src-tauri/icons/`, прописан в `tauri.conf.json`.
 - [ ] `brand/icon.ico` в Windows-сборке.
-- [ ] `brand/android/mipmap-*`, `ic_launcher.xml`, `colors.xml` в `gen/android/.../res/`.
+- [ ] `brand/android/mipmap-*`, `ic_launcher.xml`, `colors.xml` в `src-tauri/gen/android/.../res/`.
 - [ ] Проверка 16/24/32 px; точка на 16 px не сливается.
 - [ ] Шапка README и `brand/readme-header.png` актуальны.
 

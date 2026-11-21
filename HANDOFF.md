@@ -51,13 +51,13 @@ crates/
   tuner-storage/           # settings.json, presets.json, миграции
 src-tauri/                 # Tauri 2, commands, channel
 ui/                        # Svelte + TS + Vite
-gen/android/               # создаётся `tauri android init`, коммитится
+src-tauri/gen/android/               # создаётся `tauri android init`, коммитится
 brand/                     # готовые иконки (не перерисовывать)
 design/                    # прототип и макеты
 docs/                      # спецификация
 ```
 
-`brand/` и `design/` уже готовы. `crates/`, `src-tauri/`, `ui/`, `gen/android/` создаются
+`brand/` и `design/` уже готовы. `crates/`, `src-tauri/`, `ui/`, `src-tauri/gen/android/` создаются
 на этапе 0.
 
 ## 5. Этап 0: каркас (3 дня)
@@ -68,7 +68,7 @@ docs/                      # спецификация
 2. `npm create vite@latest ui -- --template svelte-ts`; `npm install` в корне.
 3. `npm run tauri init` → `src-tauri/`; `identifier = app.unisono.tuner`,
    `productName = Unisono`, окно 900×640.
-4. `npm run tauri android init` → `gen/android/`; **закоммитить** сгенерированный проект.
+4. `npm run tauri android init` → `src-tauri/gen/android/`; **закоммитить** сгенерированный проект.
 5. CI: `.github/workflows/docs.yml` уже есть; добавить `ci.yml` с `cargo fmt --check`,
    `cargo clippy -D warnings`, `cargo test`, `npm --prefix ui run build`.
 6. Проверка: пустое окно открывается на macOS, Android, Windows и Linux; `cargo test` зелёный.

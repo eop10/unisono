@@ -41,7 +41,7 @@ unisono/
 ├── crates/            tuner-core, tuner-audio, tuner-storage
 ├── src-tauri/         оболочка Tauri 2
 ├── ui/                Svelte + TypeScript
-├── gen/android/       Gradle-проект и Kotlin-шим (создаётся `tauri android init`)
+├── src-tauri/gen/android/       Gradle-проект и Kotlin-шим (создаётся `tauri android init`)
 ├── brand/             логотип, иконки (.icns, .ico, Android adaptive)
 ├── design/            интерактивный прототип и макеты
 ├── docs/              Sphinx-документация: требования, архитектура, DSP, UI, план
