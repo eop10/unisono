@@ -7,14 +7,14 @@
 use super::instruments::Localized;
 
 /// Имя строя: локализованное для встроенных, пользовательская строка для своих.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub enum LocalizedName {
     BuiltIn(Localized),
     Custom(String),
 }
 
 /// Строй: привязан к инструменту, струны — MIDI-ноты.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Tuning {
     pub id: String,
     pub instrument_id: String,

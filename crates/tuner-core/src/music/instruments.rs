@@ -4,21 +4,21 @@
 //! Данные — константы: добавление инструмента не меняет UI и DSP.
 
 /// Локализованное название (НФТ-12: RU/EN).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Localized {
     pub ru: &'static str,
     pub en: &'static str,
 }
 
 /// Тип инструмента: струнный со строями или хроматический без струн.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum InstrumentKind {
     Stringed,
     Chromatic,
 }
 
 /// Инструмент: ID, локализованное имя, тип.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct Instrument {
     pub id: &'static str,
     pub name: Localized,
