@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-//! Компонентные тесты (часть 0): скрытие центов в Uncertain (6.3.2),
-//! дефолт нового строя, maxlength=24, нотация в <option> (5.7, 6.9).
+//! Компонентные тесты: Uncertain (6.3.2), редактор (5.7), хоткеи 6.7.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
@@ -9,23 +8,24 @@ import { get } from 'svelte/store';
 import { mockCatalog } from './mockCatalog';
 
 vi.mock('../src/ipc/commands', () => ({
-  getCatalog: async () => mockCatalog,
-  startListening: async () => {},
-  stopListening: async () => {},
-  setReference: async () => {},
-  selectInstrument: async () => {},
-  selectTuning: async () => {},
-  selectString: async () => {},
-  setTolerance: async () => {},
-  setSensitivity: async () => {},
-  setLowRange: async () => {},
-  getSettings: async () => null,
-  saveSettings: async () => {},
-  getPresets: async () => [],
-  savePreset: async () => {},
-  deletePreset: async () => {},
+  getCatalog: vi.fn(async () => mockCatalog),
+  startListening: vi.fn(async () => {}),
+  stopListening: vi.fn(async () => {}),
+  setReference: vi.fn(async () => {}),
+  selectInstrument: vi.fn(async () => {}),
+  selectTuning: vi.fn(async () => {}),
+  selectString: vi.fn(async () => {}),
+  setTolerance: vi.fn(async () => {}),
+  setSensitivity: vi.fn(async () => {}),
+  setLowRange: vi.fn(async () => {}),
+  getSettings: vi.fn(async () => null),
+  saveSettings: vi.fn(async () => {}),
+  getPresets: vi.fn(async () => []),
+  savePreset: vi.fn(async () => {}),
+  deletePreset: vi.fn(async () => {}),
 }));
 
+import * as ipc from '../src/ipc/commands';
 import TunerScreen from '../src/lib/TunerScreen.svelte';
 import TuningEditor from '../src/lib/TuningEditor.svelte';
 import type { TunerState } from '../src/lib/types';
@@ -34,6 +34,17 @@ import { customs } from '../src/stores/customs';
 import { editorContext, overlay } from '../src/stores/overlay';
 import { DEFAULT_SETTINGS, settings } from '../src/stores/settings';
 import { tuner } from '../src/stores/tuner';
+
+const SILENT: TunerState = {
+  kind: 'silent',
+  f0: null,
+  cents: null,
+  clarity: 0,
+  db: -60,
+  noteMidi: null,
+  targetHz: null,
+  stringIndices: [],
+};
 
 function setState(partial: Partial<TunerState>): void {
   tuner.set({
@@ -49,11 +60,18 @@ function setState(partial: Partial<TunerState>): void {
   });
 }
 
+/** Клавиша «в окно» — как будто фокус нигде в поле ввода. */
+function press(code: string): void {
+  window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
+}
+
 beforeEach(async () => {
+  vi.clearAllMocks();
   settings.set({ ...DEFAULT_SETTINGS });
   customs.set([]);
   overlay.set(null);
   editorContext.set(null);
+  tuner.set({ ...SILENT });
   await loadCatalog();
 });
 
@@ -165,5 +183,59 @@ describe('tuning editor defaults (5.7)', () => {
       target: { value: 'Мой строй' },
     });
     expect(container.querySelector('.err')).toBeNull();
+  });
+});
+
+describe('hotkeys (6.7)', () => {
+  it('digit keys select a string; repeat press returns to auto', async () => {
+    render(TunerScreen);
+    await tick();
+    press('Digit1');
+    expect(ipc.selectString).toHaveBeenLastCalledWith(0);
+    press('Digit3');
+    expect(ipc.selectString).toHaveBeenLastCalledWith(2);
+    // Струна уже активна — то же нажатие возвращает автоопределение.
+    tuner.set({ ...get(tuner), stringIndices: [2] });
+    press('Digit3');
+    expect(ipc.selectString).toHaveBeenLastCalledWith(null);
+    // За пределами строя (у гитары 6 струн) — игнор.
+    press('Digit8');
+    expect(ipc.selectString).toHaveBeenCalledTimes(3);
+  });
+
+  it('digit keys are ignored in chromatic mode', async () => {
+    settings.update((s) => ({ ...s, instrumentId: 'chromatic', tuningId: null }));
+    render(TunerScreen);
+    await tick();
+    press('Digit1');
+    expect(ipc.selectString).not.toHaveBeenCalled();
+  });
+
+  it('arrow keys adjust A4 by 0.1 and reach the engine', async () => {
+    render(TunerScreen);
+    await tick();
+    press('ArrowUp');
+    expect(get(settings).referenceHz).toBeCloseTo(440.1, 10);
+    expect(ipc.setReference).toHaveBeenLastCalledWith(440.1);
+    // Повтор (удержание клавиши) разрешён.
+    press('ArrowDown');
+    press('ArrowDown');
+    expect(get(settings).referenceHz).toBeCloseTo(439.9, 10);
+    expect(ipc.setReference).toHaveBeenLastCalledWith(439.9);
+  });
+
+  it('hotkeys do not intercept typing in inputs', async () => {
+    render(TunerScreen);
+    await tick();
+    editorContext.set({ instrumentId: 'guitar', tuningId: null });
+    const { container } = render(TuningEditor);
+    await tick();
+    const before = get(settings).referenceHz;
+    const input = container.querySelector('#te-name') as HTMLInputElement;
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true, cancelable: true }),
+    );
+    expect(get(settings).referenceHz).toBe(before);
+    expect(ipc.setReference).not.toHaveBeenCalled();
   });
 });

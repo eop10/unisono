@@ -76,3 +76,10 @@ export async function savePreset(preset: PresetDto): Promise<void> {
 export async function deletePreset(id: string): Promise<void> {
   await invoke('delete_preset', { id });
 }
+
+/** ⌘, из нативного меню (6.7): открыть лист настроек. */
+export async function onMenuSettings(cb: () => void): Promise<() => void> {
+  const { listen } = await import('@tauri-apps/api/event');
+  const unlisten = await listen('menu-settings', () => cb());
+  return unlisten;
+}

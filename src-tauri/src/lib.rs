@@ -1,5 +1,6 @@
 mod bridge;
 mod commands;
+mod menu;
 
 use tauri::Manager;
 
@@ -34,6 +35,10 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Нативное меню (6.7): до запуска окна, ошибки не критичны.
+            if let Err(e) = menu::build(app.handle()) {
+                log::warn!("меню не собрано: {e}");
+            }
             // Каталог конфигурации: настройки и пресеты переживают перезапуск (5.2).
             match app.path().app_config_dir() {
                 Ok(dir) => {

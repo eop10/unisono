@@ -12,10 +12,11 @@
   import TunerScreen from './lib/TunerScreen.svelte';
   import { t } from './lib/i18n';
   import { catalogError, loadCatalog } from './stores/catalog';
-  import { overlay } from './stores/overlay';
+  import { overlay, openOverlay } from './stores/overlay';
   import { applySettingsToEngine, loadSettings, settings } from './stores/settings';
   import { loadPresets } from './stores/customs';
   import { startListening } from './stores/tuner';
+  import { onMenuSettings } from './ipc/commands';
 
   const s = $derived($settings);
   const showDemo =
@@ -25,6 +26,8 @@
 
   let systemLight = $state(false);
   onMount(() => {
+    // Нативное «Настройки…» ⌘, открывает лист (6.7); в браузере тихо игнорируется.
+    void onMenuSettings(() => openOverlay('settings')).catch(() => {});
     // Порядок старта (part 2): каталог → настройки → пресеты → движок → звук.
     void (async () => {
       await loadCatalog();

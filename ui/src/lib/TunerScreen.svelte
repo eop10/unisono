@@ -10,7 +10,7 @@
   import { t } from '../lib/i18n';
   import { noteLetter, noteOctave } from '../lib/notes';
   import { instrumentName, tuningName } from '../lib/types';
-  import { currentInstrument, currentTuning, settings, showStrings } from '../stores/settings';
+  import { currentInstrument, currentTuning, setReference, settings, showStrings } from '../stores/settings';
   import { listening, selectString, startListening, toggleListening, tuner } from '../stores/tuner';
   import { overlay, openOverlay } from '../stores/overlay';
 
@@ -52,14 +52,41 @@
                 : 'even',
   );
 
-  /** 6.7: Space — старт/стоп; не перехватываем ввод в полях и листах. */
+  /** 6.7: Space — старт/стоп; `1..8` — ручная струна (повтор — авто);
+   *  ↑/↓ — A4 ±0,1. В полях ввода и при открытом листе не перехватываем. */
   function onKeyDown(e: KeyboardEvent): void {
-    if (e.code !== 'Space' || e.repeat) return;
     const target = e.target as HTMLElement | null;
-    if (target && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(target.tagName)) return;
-    if (get(overlay) !== null) return;
-    e.preventDefault();
-    void toggleListening();
+    const inField = target !== null && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName);
+    if (inField) return;
+    const sheetOpen = get(overlay) !== null;
+
+    if (e.code === 'Space') {
+      // Фокус на кнопке: Space нажимает её сам, не дублируем.
+      if (target && target.tagName === 'BUTTON') return;
+      if (e.repeat || sheetOpen) return;
+      e.preventDefault();
+      void toggleListening();
+      return;
+    }
+    if (sheetOpen) return;
+
+    // e.code — физическая клавиша: работает и в русской раскладке.
+    if (/^Digit[1-8]$/.test(e.code)) {
+      if (e.repeat || !tun) return; // хроматика без струн — игнор
+      const index = Number(e.code.slice(5)) - 1;
+      if (index >= tun.strings.length) return;
+      e.preventDefault();
+      const midi = tun.strings[index];
+      const indices = tun.strings.map((m, j) => (m === midi ? j : -1)).filter((j) => j >= 0);
+      selectString(indices, midi);
+      return;
+    }
+
+    if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+      e.preventDefault();
+      const step = e.code === 'ArrowUp' ? 0.1 : -0.1;
+      setReference(Math.round((s.referenceHz + step) * 10) / 10);
+    }
   }
 
   onMount(() => window.addEventListener('keydown', onKeyDown));
