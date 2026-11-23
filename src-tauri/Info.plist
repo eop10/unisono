@@ -12,6 +12,6 @@
 	<!-- Копирайт в окне «Информация» Finder (Tauri не имеет поля copyright
 	     в bundle.macOS, поэтому через Info.plist). -->
 	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Егор Присажный. Apache-2.0</string>
+	<string>© 2026 Егор Присяжный. Apache-2.0</string>
 </dict>
 </plist>

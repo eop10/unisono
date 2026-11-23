@@ -21,7 +21,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         let about = AboutMetadata {
             name: Some("Unisono".into()),
             version: Some(env!("CARGO_PKG_VERSION").into()),
-            copyright: Some("© 2026 Егор Присажный. Apache-2.0".into()),
+            copyright: Some("© 2026 Егор Присяжный. Apache-2.0".into()),
             license: Some("Apache-2.0".into()),
             // «unsigned build» — не создаём ложного впечатления подписи (7.2.3).
             comments: Some("unsigned build · офлайн, без сбора данных".into()),
