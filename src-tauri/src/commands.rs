@@ -13,6 +13,7 @@ use crate::bridge::{AppState, TuningSpec};
 /// Пользовательские строи приезжают из tuner-storage (4B), не отсюда.
 #[tauri::command]
 pub fn get_catalog() -> serde_json::Value {
+    log::info!("get_catalog");
     let reg = InstrumentRegistry::new();
     let tunings: Vec<_> = reg
         .instruments()
@@ -33,7 +34,12 @@ pub fn start_listening(
     channel: Channel<TunerState>,
     state: State<'_, AppState>,
 ) -> Result<(), AudioError> {
-    state.start_capture(crate::bridge::channel_sink(channel))
+    log::info!("start_listening");
+    let result = state.start_capture(crate::bridge::channel_sink(channel));
+    if let Err(e) = &result {
+        log::warn!("start_listening не удался: {e}");
+    }
+    result
 }
 
 /// Остановить прослушивание: cpal и поток анализа (включая закрытие окна).
@@ -87,6 +93,7 @@ pub fn set_low_range(low_range: bool, state: State<'_, AppState>) {
 /// Настройки, переживающие перезапуск (5.2–5.3): файл или дефолт.
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> crate::bridge::SettingsDto {
+    log::info!("get_settings");
     state.settings_dto()
 }
 

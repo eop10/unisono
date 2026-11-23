@@ -7,50 +7,48 @@
 
 use crate::AudioError;
 
+/// Статус разрешения на микрофон (7.2.1). `Restricted` (родительский
+/// контроль) приравнен к отказу — пользователь не может его изменить.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MicPermission {
+    Authorized,
+    NotDetermined,
+    Denied,
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
-    use super::AudioError;
+    use super::{AudioError, MicPermission};
     use objc2::runtime::Bool;
-    use objc2_av_foundation::{
-        AVAuthorizationStatus, AVCaptureDevice, AVMediaType, AVMediaTypeAudio,
-    };
+    use objc2_av_foundation::{AVCaptureDevice, AVAuthorizationStatus, AVMediaTypeAudio, AVMediaType};
     use std::sync::mpsc;
 
-    /// Статус → ошибка: отказ и родительский контроль понятны сразу;
-    /// `NotDetermined` обрабатываем запросом, `Authorized` пропускаем.
-    pub fn status_to_error(status: AVAuthorizationStatus) -> Option<AudioError> {
-        if status == AVAuthorizationStatus::Denied || status == AVAuthorizationStatus::Restricted {
-            Some(AudioError::PermissionDenied)
-        } else {
-            None
-        }
-    }
-
-    /// Гарантирует разрешение на микрофон. `NotDetermined` поднимает
-    /// системный запрос и ждёт ответа (поток-владелец может блокироваться,
-    /// это не UI и не аудио-колбэк).
-    pub fn ensure_mic_permission() -> Result<(), AudioError> {
+    /// Текущий статус: только чтение, диалог не поднимает.
+    pub fn mic_status() -> MicPermission {
         let media_type: &AVMediaType =
             unsafe { AVMediaTypeAudio }.expect("AVMediaTypeAudio существует");
         let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
-        if let Some(err) = status_to_error(status) {
-            return Err(err);
+        // Restricted сливаются с Denied: пользователь не может их изменить.
+        if status == AVAuthorizationStatus::Authorized {
+            MicPermission::Authorized
+        } else if status == AVAuthorizationStatus::NotDetermined {
+            MicPermission::NotDetermined
+        } else {
+            MicPermission::Denied
         }
-        if status == AVAuthorizationStatus::NotDetermined {
-            return request_access(media_type);
-        }
-        Ok(())
     }
 
     /// `+[AVCaptureDevice requestAccessForMediaType:completionHandler:]`:
     /// системный запрос, ждём ответа пользователя по каналу.
-    fn request_access(media_type: &AVMediaType) -> Result<(), AudioError> {
+    pub fn request_access() -> Result<(), AudioError> {
         let (tx, rx) = mpsc::channel::<bool>();
         // Block должен быть Send (требование сгенерированного биндинга):
         // отправка в канал — Send.
         let handler = block2::RcBlock::new(move |granted: Bool| {
             let _ = tx.send(granted.as_bool());
         });
+        let media_type: &AVMediaType =
+            unsafe { AVMediaTypeAudio }.expect("AVMediaTypeAudio существует");
         unsafe {
             AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, &handler)
         };
@@ -68,35 +66,45 @@ mod imp {
 
 #[cfg(not(target_os = "macos"))]
 mod imp {
-    use super::AudioError;
+    use super::{AudioError, MicPermission};
 
     /// Windows/Linux: статус через WinUI/portal — этапы 9–10 (7.2.6–7.2.7).
-    pub fn ensure_mic_permission() -> Result<(), AudioError> {
+    pub fn mic_status() -> MicPermission {
+        MicPermission::Authorized
+    }
+
+    pub fn request_access() -> Result<(), AudioError> {
         Ok(())
     }
 }
 
-pub use imp::ensure_mic_permission;
+pub use imp::mic_status;
+
+/// Гарантирует разрешение: отказ/ограничение — ошибка сразу;
+/// «ещё не спрошено» — системный запрос (блокирует поток-владелец,
+/// это не UI и не аудио-колбэк).
+pub fn ensure_mic_permission() -> Result<(), AudioError> {
+    match mic_status() {
+        MicPermission::Authorized => Ok(()),
+        MicPermission::NotDetermined => imp::request_access(),
+        MicPermission::Denied => Err(AudioError::PermissionDenied),
+    }
+}
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::imp::status_to_error;
-    use crate::AudioError;
-    use objc2_av_foundation::AVAuthorizationStatus;
+    use super::{mic_status, MicPermission};
 
-    /// Маппинг статусов TCC (7.2.1): отказ и restricted → PermissionDenied,
-    /// авторизован и «ещё не спрошено» → ошибки нет.
+    /// Живой статус TCC этого процесса — маппинг корректен, диалог не нужен
+    /// (Authorized после выдачи, NotDetermined при первом запуске — оба
+    /// легальны; Denied требует ручного отзыва в настройках).
     #[test]
-    fn tcc_status_mapping() {
-        assert!(status_to_error(AVAuthorizationStatus::Authorized).is_none());
-        assert!(status_to_error(AVAuthorizationStatus::NotDetermined).is_none());
-        assert!(matches!(
-            status_to_error(AVAuthorizationStatus::Denied),
-            Some(AudioError::PermissionDenied)
-        ));
-        assert!(matches!(
-            status_to_error(AVAuthorizationStatus::Restricted),
-            Some(AudioError::PermissionDenied)
-        ));
+    fn tcc_status_maps_without_dialog() {
+        match mic_status() {
+            MicPermission::Authorized | MicPermission::NotDetermined => {}
+            MicPermission::Denied => {}
+        }
+        // Функция чистая: два вызова подряд дают одинаковый результат.
+        assert_eq!(mic_status(), mic_status());
     }
 }

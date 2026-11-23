@@ -6,5 +6,12 @@
 	     Tauri мержит этот файл в итоговый Contents/Info.plist. -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Тюнер слушает струну, чтобы показать ноту. Звук не записывается и не покидает устройство.</string>
+	<!-- Категория App Store (для будущих сборок): музыкальные инструменты. -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<!-- Копирайт в окне «Информация» Finder (Tauri не имеет поля copyright
+	     в bundle.macOS, поэтому через Info.plist). -->
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Егор Присажный. Apache-2.0</string>
 </dict>
 </plist>

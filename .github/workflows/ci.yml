@@ -60,16 +60,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: "aarch64-apple-darwin,x86_64-apple-darwin"
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm ci --prefix ui && npm ci
-      - run: npm run tauri build
+      - run: npm run tauri build -- --target universal-apple-darwin
       - uses: actions/upload-artifact@v4
         with:
           name: dmg
-          path: target/release/bundle/dmg/*.dmg
+          path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
   android:
     needs: [detect, rust, ui]
