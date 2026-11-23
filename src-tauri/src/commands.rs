@@ -2,7 +2,7 @@
 //! Тонкие обёртки над [`AppState`]; центы и ноты считает движок, не bridge.
 
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use tuner_audio::AudioError;
 use tuner_core::engine::{Sensitivity, TunerState};
 use tuner_core::music::InstrumentRegistry;
@@ -29,13 +29,18 @@ pub fn get_catalog() -> serde_json::Value {
 /// Начать прослушивание: состояния уходят в `channel` (30–60 Гц, 3.6),
 /// сырое аудио через IPC не передаётся. Ошибка устройства — `AudioError`
 /// в UI-стор превращается в `error`/`nopermission`.
+/// Не блокирует главный поток (3.3): TCC-запрос ожидает в `spawn_blocking`.
 #[tauri::command]
-pub fn start_listening(
+pub async fn start_listening(
+    app: AppHandle,
     channel: Channel<TunerState>,
-    state: State<'_, AppState>,
 ) -> Result<(), AudioError> {
     log::info!("start_listening");
-    let result = state.start_capture(crate::bridge::channel_sink(channel));
+    let sink = crate::bridge::channel_sink(channel);
+    let result =
+        tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().start_capture(sink))
+            .await
+            .map_err(|e| AudioError::Stream(format!("поток запуска упал: {e}")))?;
     if let Err(e) = &result {
         log::warn!("start_listening не удался: {e}");
     }
@@ -43,9 +48,13 @@ pub fn start_listening(
 }
 
 /// Остановить прослушивание: cpal и поток анализа (включая закрытие окна).
+/// Выполняется в `spawn_blocking`, чтобы не блокировать главный поток.
 #[tauri::command]
-pub fn stop_listening(state: State<'_, AppState>) {
-    state.stop();
+pub async fn stop_listening(app: AppHandle) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().stop();
+    })
+    .await;
 }
 
 /// Опорная частота A4, Гц (400–480): движок пересчитывает цели без скачка.
