@@ -1,0 +1,313 @@
+# Задача для Gemini 3.8 Flash в Antigravity: зелёный CI и приёмка этапа 4B
+
+Ты работаешь в существующем репозитории **Unisono** (мультиинструментальный тюнер,
+Rust + Tauri 2 + Svelte 5). Открой папку проекта в Antigravity и работай в режиме агента:
+читай файлы, правь код и запускай команды сам. Не проси пользователя копировать код.
+
+- Репозиторий: https://github.com/eop10/unisono
+- Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
+- Последний запушенный коммит — `0f13156`; поверх него локально лежит только этот файл
+  (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
+- Этапы 0–4B реализованы. Задача — **не начинать этап 5 (Android/oboe)**, а довести 4B
+  до зелёного CI и приёмки. Промпт на этап 5 будет отдельно.
+
+## 0. Прочитай перед началом
+
+1. `HANDOFF.md` — правила, версии, ключи.
+2. `docs/source/03_architecture.md` §3.5–3.7.
+3. `docs/source/05_data.md` §5.1–5.8 — формат хранения.
+4. `docs/source/06_ui.md` §6.3–6.9 — экран, листы, меню, хоткеи.
+5. `docs/source/07_platform.md` §7.2.1–7.2.3 — cpal, TCC, DMG.
+6. `docs/source/08_build_test.md` §8.6 — релизный чек-лист macOS.
+
+`docs/`, `brand/`, `design/` **не трогать**. Документация — Sphinx-проект; правки только
+по отдельному разрешению владельца.
+
+## 1. Что уже проверено (не переделывать)
+
+На macOS локально зелёные:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace          # 103 passed, 0 failed
+npm --prefix ui run check       # 0 errors, 0 warnings
+npm --prefix ui run test        # 43 passed
+npm --prefix ui run build
+cargo check -p app --target aarch64-linux-android   # см. env в 2.2
+npm run tauri build -- --debug --bundles app
+```
+
+`.app` собирается: `Info.plist` содержит `NSMicrophoneUsageDescription`,
+`LSMinimumSystemVersion = 12.0`, подпись ad-hoc с runtime, `Info.plist entries=17`.
+
+**CI красный** на `0f13156` (run `45221611518`): job `rust` на Ubuntu падает на
+`unused imports` в `src-tauri/src/menu.rs:6`; из-за этого `android` и `desktop` даже
+не запускались. Логи:
+
+```
+error: unused imports: `AboutMetadata` and `SubmenuBuilder`
+ --> src-tauri/src/menu.rs:6
+```
+
+## 2. Part 0 — сделать CI зелёным (P0, первым делом)
+
+### 2.1. Исправить импорты меню
+
+`src-tauri/src/menu.rs`:
+
+```rust
+use tauri::menu::{MenuBuilder, MenuItem};
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadata, SubmenuBuilder};
+```
+
+`AboutMetadata` и `SubmenuBuilder` используются только в `#[cfg(target_os = "macos")]`,
+поэтому на Linux/Windows они должны импортироваться под тем же cfg. Больше ничего
+в меню не менять.
+
+### 2.2. Проверить Android локально
+
+NDK и targets уже установлены:
+
+```bash
+export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
+export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
+export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
+cargo check -p app --target aarch64-linux-android
+```
+
+Должно быть без ошибок. Если появились новые — чинить, а не отключать job.
+
+### 2.3. Пуш и наблюдение за CI
+
+```bash
+git add -A && git commit -m "stage-4B: fix non-macOS menu imports (CI)"
+git push origin main
+gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
+```
+
+Ждать все четыре job: `rust`, `ui`, `desktop`, `android`. Если `desktop` упадёт на
+universal-сборке — смотреть лог, чинить, пушить снова. Не переходить к Part 1,
+пока `rust` не зелёный.
+
+## 3. Part 1 — правки по ревью 4B
+
+Делать по одной, коммит после каждой логической группы.
+
+### 3.1. Опечатка в копирайте (P1)
+
+В `NOTICE` правильно: **Егор Присяжный**. В двух местах опечатка «Присажный»:
+
+- `src-tauri/Info.plist` (`NSHumanReadableCopyright`);
+- `src-tauri/src/menu.rs` (`AboutMetadata.copyright`).
+
+Исправить на «© 2026 Егор Присяжный. Apache-2.0». Проверить:
+
+```bash
+grep -R "Присажный" -n src-tauri README.md NOTICE || true
+```
+
+### 3.2. Экран `NoPermission`: нет способа повторить после выдачи доступа (P1)
+
+`ui/src/lib/TunerScreen.svelte` (ветка `st.kind === 'nopermission'`) показывает только
+«Открыть настройки». Пользователь выдаёт доступ и возвращается — приложение само не
+перезапускает захват, видимой кнопки «Повторить» нет.
+
+Добавить вторую кнопку: «Повторить» (`t(lang, 'retry')`, ключ уже есть) →
+`void startListening()`, и оставить «Открыть настройки». Расположить основную
+(«Повторить») первой, вторичную — рядом/ниже. Добавить/поправить тест в
+`ui/tests/components.test.ts`: на `nopermission` есть кнопка retry и клик вызывает
+`startListening`.
+
+### 3.3. `start_listening`/`stop_listening` не должны блокировать главный поток (P1)
+
+Системный запрос TCC (`AVCaptureDevice.requestAccess`) может ждать ответа
+пользователя неограниченно. Сейчас синхронная команда `start_listening` доходит до
+этого ожидания, а в Tauri синхронные команды выполняются на главном потоке — окно
+может зависнуть на время диалога.
+
+Сделать обе команды асинхронными и вынести блокирующую работу в
+`tauri::async_runtime::spawn_blocking`:
+
+```rust
+use tauri::Manager; // для app.state()
+
+#[tauri::command]
+pub async fn start_listening(
+    app: tauri::AppHandle,
+    channel: Channel<TunerState>,
+) -> Result<(), AudioError> {
+    let sink = crate::bridge::channel_sink(channel);
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().start_capture(sink)
+    })
+    .await
+    .map_err(|e| AudioError::Stream(format!("поток запуска упал: {e}")))?
+}
+
+#[tauri::command]
+pub async fn stop_listening(app: tauri::AppHandle) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().stop();
+    })
+    .await;
+}
+```
+
+Сигнатуру JS-обёрток (`ui/src/ipc/commands.ts`) не менять — `invoke` одинаков.
+Проверить, что UI-тесты и `svelte-check` зелёные, а приложение стартует.
+
+### 3.4. Валидация пресета при сохранении (P2)
+
+`crates/tuner-storage/src/lib.rs`, `save_presets`: сейчас проверяются только струны,
+а `load_presets` — ещё имя/ID/инструмент. Пресет с пустым именем сохранится и молча
+исчезнет после перезапуска.
+
+Использовать существующий `PresetRecord::is_valid()` **и** проверку инструмента
+по реестру перед записью; ошибка — `StoreError::InvalidPreset { id, reason }`.
+Тест: `save_presets` с пустым именем и с `id` без префикса `custom.` возвращает
+`InvalidPreset`, файл не создан.
+
+### 3.5. Файл от более новой схемы не перезаписывать (P2)
+
+`docs/source/05_data.md` §5.8.3: если `schema_version` больше текущей — читаем
+известные поля, **файл не перезаписываем**. Сейчас `load_settings` возвращает данные,
+а первое же изменение в UI (debounce 300 мс) перезапишет файл версией 2.
+
+- В `Store` добавить `settings_read_only: AtomicBool`.
+- `load_settings`: `version > SCHEMA_VERSION` → флаг `true`, иначе `false`.
+- `save_settings`: при флаге вернуть `StoreError::NewerSchema { found, current }`
+  и **не писать** файл.
+- Тест: записать `schema_version: 99`, загрузить, `save_settings(default)` → `Err`,
+  содержимое файла не изменилось; обычный файл сохраняется как раньше.
+- В bridge ошибка уже логируется (`log::warn!`) — UI не ронять.
+
+### 3.6. `scripts/build-macos.sh`: проверки и glob (P2)
+
+1. `DMG="$(ls ... | head -n 1)"` может упасть из-за `pipefail`/SIGPIPE. Заменить на glob:
+   ```bash
+   shopt -s nullglob
+   dmgs=( "$DMG_DIR"/Unisono_*_universal.dmg )
+   if (( ${#dmgs[@]} != 1 )); then
+     echo "ожидался один Universal DMG, найдено: ${#dmgs[@]}" >&2
+     exit 1
+   fi
+   DMG="${dmgs[0]}"
+   ```
+2. `grep adhoc` проходит и для linker-signed бинарника. Добавить настоящие проверки:
+   ```bash
+   codesign --verify --deep --strict "$APP"
+   codesign -dv "$APP" 2>&1 | grep "Info.plist entries=" >/dev/null
+   ```
+   `grep` без `-q`: с `pipefail` ранний выход `grep -q` даёт SIGPIPE `codesign`.
+3. Прогнать скрипт целиком (может занять 15–25 минут):
+   ```bash
+   bash scripts/build-macos.sh
+   ```
+   В отчёт — путь к DMG и `dist/SHA256SUMS`. Если universal-сборка падает —
+   чинить, не подменять на host-only.
+
+### 3.7. Мелкая чистка (P3, можно одним коммитом)
+
+- `ui/src/lib/types.ts`: комментарий у `onboardingDone` противоречив
+  («в файле, не в DTO — нет, ходит через DTO»). Заменить на
+  «UI не показывает; сохраняется в settings.json (5.3)».
+- `crates/tuner-core/src/engine.rs` (doc-комментарий модуля): `Error`/`NoPermission`
+  теперь приходят не только из bridge, но и из watchdog (`tuner-audio`). Уточнить
+  формулировку, код не менять.
+
+### 3.8. Отзыв разрешения в рантайме — проверить, не додумывать (P1, ручная проверка)
+
+Сценарий: приложение слушает → «Системные настройки → Конфиденциальность → Микрофон»
+→ выключить Unisono. Если macOS рвёт поток/перестаёт отдавать кадры, watchdog
+переоткроет устройство, `ensure_mic_permission` вернёт `PermissionDenied`, UI покажет
+`NoPermission` — всё уже работает, **код не трогать**.
+
+Если же UI остаётся на «Слушаю…» (macOS отдаёт тишину), добавить в наблюдатель
+(`crates/tuner-audio/src/watchdog.rs`) периодическую проверку `crate::tcc::mic_status()`
+раз в ~2 с: `Denied` → остановить поток, `listening = false`, отправить
+`error_state(Some(AudioError::PermissionDenied))`. Проверку делать только на macOS
+(на остальных `mic_status()` возвращает `Authorized`), без `unsafe` в `tuner-core`.
+
+В отчёте явно написать, какой из двух вариантов наблюдался.
+
+## 4. Part 2 — ручная приёмка 4B (владелец, не агент)
+
+Агент **не может** нажимать системные диалоги и играть на инструменте. Собрать
+артефакты, подготовить чек-лист и попросить владельца подтвердить. Не писать
+«проверено», если проверял не человек.
+
+Чек-лист:
+
+1. `bash scripts/build-macos.sh` → открыть DMG, перетащить в Applications, запустить
+   через «Всё равно открыть» (macOS 14 — правый клик → «Открыть»; 15+ — Настройки →
+   Безопасность → «Всё равно открыть»).
+2. Первый запуск: системный запрос микрофона появляется; разрешить.
+3. Гитара: E2 (6-я струна) и A2 настраиваются, центы реагируют; скрипка: A4.
+4. A4 = 442 → перезапуск приложения → в настройках и на экране 442, движок считает
+   от 442 (не 440).
+5. Бас-5 + пользовательский строй: создать, перезапустить → строй на месте;
+   удалить → исчезает и после перезапуска.
+6. Отказ: выключить микрофон в системных настройках → перезапуск → экран
+   `NoPermission`; включить → кнопка «Повторить» → тюнер снова работает.
+7. Отзыв в рантайме (см. 3.8) — зафиксировать поведение.
+8. Меню: «Unisono → Настройки…» (⌘,) открывает лист; ⌘Q выходит.
+9. Хоткеи: `1…6` выбирают струну (гитара), повторное нажатие — авто; `↑`/`↓` меняют
+   A4 на 0,1; `Space` — старт/стоп.
+10. Хроматика + «Низкий диапазон»: нота 30–65 Гц (например, B0) определяется;
+    без переключателя — окно 4096.
+
+## 5. Part 3 — гейты, пуш, отчёт
+
+Перед пушем — всё зелёное:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+npm --prefix ui run check
+npm --prefix ui run test
+npm --prefix ui run build
+# Android (env из 2.2):
+cargo check -p app --target aarch64-linux-android
+# macOS-бандл и DMG:
+bash scripts/build-macos.sh
+```
+
+Затем:
+
+```bash
+git push origin main
+gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
+```
+
+Готово, когда:
+
+- CI зелёный во всех job: `rust`, `ui`, `desktop`, `android`;
+- Universal DMG собран, `codesign --verify --deep --strict` проходит,
+  `Info.plist` содержит микрофон и `12.0`, SHA-256 записан;
+- ручной чек-лист владельца пройден (или явно перечислено, что не проверено);
+- нет незакоммиченных файлов, нет `target/`, `dist/`, `.venv` в индексе.
+
+Отчёт в конце (в чат и коротко в issue #5):
+
+1. Что исправлено (по пунктам 2–3), какие коммиты.
+2. Вывод проверок (команды + результат), номер зелёного CI-run.
+3. Путь к DMG, SHA-256, результат `plutil`/`codesign`.
+4. Что из ручного чек-листа подтвердил владелец, что осталось.
+5. Риски/долги для этапа 5: TCC при ad-hoc пересборках, реальный микрофон на Intel,
+   Windows/Linux, `oboe`.
+
+## 6. Что НЕ делать
+
+- Не начинать этап 5 (oboe, Kotlin-шим, APK-подпись) — отдельный промпт.
+- Не трогать `docs/`, `brand/`, `design/`.
+- Не делать notarization, Windows/Linux-сборки, релиз 0.1.0.
+- Не запрашивать и не коммитить keystore/пароли.
+- Не добавлять `unsafe` в `tuner-core`; `unsafe` — только в `tuner-audio` и только
+  при необходимости.
+- Не менять формулы/пороги DSP и публичный контракт `PitchDetector` (in-place, §4.3.7).
+- Не «упрощать» watchdog, удаляя переоткрытие или TCC-проверку.
