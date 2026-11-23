@@ -20,14 +20,22 @@ npm run tauri build -- --target universal-apple-darwin
 
 APP="$ROOT/target/universal-apple-darwin/release/bundle/macos/Unisono.app"
 DMG_DIR="$ROOT/target/universal-apple-darwin/release/bundle/dmg"
-DMG="$(ls "$DMG_DIR"/Unisono_*_universal.dmg | head -n 1)"
+shopt -s nullglob
+dmgs=( "$DMG_DIR"/Unisono_*_universal.dmg )
+if (( ${#dmgs[@]} != 1 )); then
+  echo "ожидался один Universal DMG, найдено: ${#dmgs[@]}" >&2
+  exit 1
+fi
+DMG="${dmgs[0]}"
 
 echo "==> Проверки бандла"
 # Разрешение микрофона обязано быть в Info.plist (7.2.2).
 # Без -q: grep читает весь вывод, иначе plutil/codesign ловят SIGPIPE (pipefail).
 plutil -p "$APP/Contents/Info.plist" | grep NSMicrophoneUsageDescription >/dev/null
 plutil -p "$APP/Contents/Info.plist" | grep '"LSMinimumSystemVersion" => "12.0"' >/dev/null
-# ad-hoc подпись: убирает «приложение повреждено», Gatekeeper всё равно спросит (7.2.3).
+# Проверка целостности подписи и Info.plist entries (ревью 3.6, 7.2.3).
+codesign --verify --deep --strict "$APP"
+codesign -dv "$APP" 2>&1 | grep "Info.plist entries=" >/dev/null
 codesign -dv "$APP" 2>&1 | grep adhoc >/dev/null
 hdiutil verify "$DMG"
 
