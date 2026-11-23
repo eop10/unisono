@@ -1,0 +1,105 @@
+# Prompt for GLM 5.3: stage 3 fixes + stage 4A (macOS audio)
+
+Ты — разработчик проекта **Unisono**. Репозиторий: https://github.com/eop10/unisono
+Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`.
+
+Сейчас в `main`: этапы 0–3. Работают каталог, UI на Svelte, DSP на синтетике.
+Аудио ещё нет: `ui/src/stores/tuner.ts` — мок, демо-панель в DEV.
+
+Перед работой прочитай:
+1. `HANDOFF.md`
+2. `docs/source/03_architecture.md` (3.4–3.7)
+3. `docs/source/04_dsp.md` (4.3–4.4)
+4. `docs/source/06_ui.md` (6.3–6.9)
+5. `docs/source/07_platform.md` (7.2, macOS)
+6. `docs/source/09_plan.md` (этап 4)
+7. `design/prototype.html` — эталон интерфейса
+
+## Часть 0. Правки этапа 3 (до аудио)
+
+1. **Шестерёнка.** В `ui/src/lib/TunerScreen.svelte` сейчас иконка «солнце» (круг + лучи).
+   Замени на нормальную шестерёнку (cog) из `design/prototype.html` (Heroicons cog-6-tooth):
+   8 зубцов + отверстие. Это уже было замечанием пользователя.
+2. **`Uncertain`.** В `TunerScreen.svelte` при `st.kind === 'uncertain'` центы сейчас видны
+   (класс `dim`). По 6.3.2 цифры должны быть скрыты: показывай `—`, подпись `центов` не показывай,
+   шкалу оставь приглушённой с иглой в последней позиции.
+3. **`TuningEditor.svelte`:**
+   - новый строй по умолчанию должен брать струны текущего строя инструмента
+     (для гитары — 6 струн), а не `[64, 69, 74]` для всех;
+   - `maxlength` имени — 24, не 32 (5.7);
+   - в `<option>` нота должна учитывать `settings.notation` (сейчас всегда `'latin'`);
+   - при вводе имени/струн сбрасывай старую ошибку.
+4. Тесты: добавь `vitest` на скрытие центов в `Uncertain`, дефолт редактора и maxlength/нотацию.
+5. `npm --prefix ui run check`, `test`, `build` — зелёные.
+
+## Часть 1. TunerEngine (ядро)
+
+Новый модуль `crates/tuner-core/src/engine.rs`:
+
+- `TunerState` (Serialize, camelCase): `kind`, `f0: Option<f32>`, `cents: Option<f32>`,
+  `clarity: f32`, `db: f32`, `noteMidi: Option<u8>`, `targetHz: Option<f32>`,
+  `stringIndices: Vec<usize>`. `kind` — `"silent" | "uncertain" | "tracking" | "intune"`.
+- `EngineConfig`: `tuning`, `a4`, `tolerance_cents`, `sensitivity`, `manual_string` (Option).
+- `StringMatcher`:
+  - auto: ближайшая целевая струна по |cents|; гистерезис: не переключать, если новая струна
+    выигрывает < 10 центов; выходить из текущей при > 60 центов;
+  - manual: выбранная струна; при чужой ноте `stringIndices` пустой, kind = uncertain;
+  - chromatic: ближайшая нота равномерной темпеции, `stringIndices` пустой;
+  - унисоны: балалайка E4+E4 отдаёт оба индекса.
+- `TunerEngine`:
+  - при смене строя/A4 пересоздаёт `DetectorConfig` (окно из registry, f_min из фактической цели);
+  - `process_frame(&mut self, raw: &mut [f32], fs: u32) -> TunerState`;
+  - `Estimate::Silent` → `kind=silent`; `Uncertain` → `uncertain`; `Pitch` → tracking/intune;
+  - `intune` при |cents| ≤ tolerance 250 мс подряд; сброс при выходе;
+  - сглаживание `SmoothingFilter`, сброс при смене строя;
+  - `cents = 1200·log2(f0 / target)`; `noteMidi` из target/ближайшей ноты.
+- Тесты: E2 440 → −7 центов; intune через 250 мс и выход; смена струны с гистерезисом;
+  балалайка E4+E4; хроматика; A4=442 пересчитывает target.
+
+## Часть 2. AudioSource на macOS
+
+`crates/tuner-audio`:
+
+- `trait AudioSource`: `sample_rate()`, `start(sink: rtrb::Producer<f32>) -> Result<(), AudioError>`,
+  `stop()`.
+- `CpalSource`: `cpal` CoreAudio, `f32`, моно, 48 кГц (fallback — фактическая конфигурация),
+  буфер 512; колбэк без аллокаций и блокировок; ошибки устройства — в `AudioError`.
+- `rtrb` SPSC; capacity ~1 с; переполнение считается, не паникует.
+- Поток анализа: `std::thread`, читает ring buffer, окно 4096/8192/16384, вызывает `TunerEngine`.
+- `tuner-audio` не знает про Tauri и UI.
+
+## Часть 3. Tauri bridge и macOS
+
+- `src-tauri`:
+  - `AppState`: текущий `TunerEngine`/config, флаг прослушивания, поток анализа.
+  - команды: `start_listening(channel: tauri::ipc::Channel<TunerState>)`, `stop_listening`,
+    `set_reference(hz)`, `select_instrument(id)`, `select_tuning(id)`, `get_catalog` (есть).
+  - `Channel<TunerState>` 30–60 Гц; не отправлять сырое аудио.
+  - `stop_listening` останавливает поток и `cpal`; при закрытии окна — тоже.
+  - `src-tauri/Info.plist` с `NSMicrophoneUsageDescription` (текст из 7.2.2).
+- UI:
+  - замени мок `stores/tuner.ts` на реальный поток через `Channel`;
+  - состояния `error`/`nopermission` из аудио-ошибок;
+  - демо-панель оставь только в DEV/`?demo`, в production не рендерить;
+  - не добавляй аудио-логику в Svelte.
+
+## Порядок и остановка
+
+Делай части по порядку, коммить после каждой. Если контекст/лимит заканчивается —
+остановись после завершённой части, оставь рабочее состояние и отчёт;
+не оставляй недописанный код.
+
+## Часть 4. Что НЕ делать в этом этапе
+
+- `tuner-storage` (settings/presets), DMG, notarization, Android, Windows/Linux — следующий этап 4B.
+- Не трогай `brand/`, `design/`, `docs/`.
+- Не добавляй `unsafe` в `tuner-core`.
+
+## Definition of Done
+
+- `cargo fmt --check`, `clippy -D warnings`, `cargo test` — зелёные.
+- `npm --prefix ui run check`, `test`, `build` — зелёные.
+- На macOS `npm run tauri dev`: приложение слушает микрофон, показывает ноту/центы,
+  start/stop работают, разрешение запрашивается, в фоне захват останавливается.
+- CI зелёный.
+- В конце отчёт: что сделано, как проверено, что осталось для 4B.
