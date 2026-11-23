@@ -198,7 +198,7 @@ pub struct PresetRecord {
 impl PresetRecord {
     /// Структурная валидность (§5.6, 5.7): струны 1..8 из MIDI 21..96.
     /// Имя проверяет UI при вводе; здесь — защита файла от мусора.
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         (1..=STRINGS_MAX).contains(&self.strings.len())
             && self
                 .strings
@@ -375,21 +375,22 @@ impl Store {
 
     /// Атомарная запись пресетов; лимит 20 на инструмент проверяется здесь.
     pub fn save_presets(&self, presets: &[PresetRecord]) -> Result<(), StoreError> {
+        let registry = InstrumentRegistry::new();
         for preset in presets {
-            if preset.strings.is_empty() || preset.strings.len() > STRINGS_MAX {
-                return Err(StoreError::InvalidPreset {
-                    id: preset.id.clone(),
-                    reason: format!("струн {} (нужно 1..8)", preset.strings.len()),
-                });
-            }
-            if let Some(&bad) = preset
-                .strings
+            if !registry
+                .instruments()
                 .iter()
-                .find(|&&m| !(MIDI_MIN..=MIDI_MAX).contains(&m))
+                .any(|i| i.id == preset.instrument_id)
             {
                 return Err(StoreError::InvalidPreset {
                     id: preset.id.clone(),
-                    reason: format!("MIDI {bad} вне 21–96"),
+                    reason: format!("неизвестный инструмент {}", preset.instrument_id),
+                });
+            }
+            if !preset.is_valid() {
+                return Err(StoreError::InvalidPreset {
+                    id: preset.id.clone(),
+                    reason: "невалидный пресет (имя, ID или струны вне диапазона)".into(),
                 });
             }
         }
@@ -748,11 +749,39 @@ mod tests {
     #[test]
     fn save_rejects_invalid_preset() {
         let (_dir, store) = tmp_store();
-        let mut bad = preset("guitar", "x");
-        bad.strings = vec![10, 200];
+        // Струны вне диапазона
+        let mut bad_strings = preset("guitar", "bad-strings");
+        bad_strings.strings = vec![10, 200];
         assert!(matches!(
-            store.save_presets(&[bad]).unwrap_err(),
+            store.save_presets(&[bad_strings]).unwrap_err(),
             StoreError::InvalidPreset { .. }
         ));
+        assert!(!store.presets_path().exists());
+
+        // Пустое имя (3.4)
+        let mut bad_name = preset("guitar", "bad-name");
+        bad_name.name = "   ".into();
+        assert!(matches!(
+            store.save_presets(&[bad_name]).unwrap_err(),
+            StoreError::InvalidPreset { .. }
+        ));
+        assert!(!store.presets_path().exists());
+
+        // ID без префикса custom. (3.4)
+        let mut bad_id = preset("guitar", "bad-id");
+        bad_id.id = "no_prefix_here".into();
+        assert!(matches!(
+            store.save_presets(&[bad_id]).unwrap_err(),
+            StoreError::InvalidPreset { .. }
+        ));
+        assert!(!store.presets_path().exists());
+
+        // Неизвестный инструмент (3.4)
+        let bad_inst = preset("nonexistent_instrument", "bad-inst");
+        assert!(matches!(
+            store.save_presets(&[bad_inst]).unwrap_err(),
+            StoreError::InvalidPreset { .. }
+        ));
+        assert!(!store.presets_path().exists());
     }
 }
