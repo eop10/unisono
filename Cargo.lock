@@ -4151,6 +4151,7 @@ dependencies = [
  "criterion",
  "hound",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

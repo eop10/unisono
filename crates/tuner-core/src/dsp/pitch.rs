@@ -10,7 +10,7 @@ use super::window::{tau_max, tau_min, F_MIN_HZ};
 use crate::music::{note, InstrumentRegistry, Tuning};
 
 /// Параметры детектора (4.2.1). Окно и границы τ — от фактического строя и fs.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DetectorConfig {
     /// Окно анализа: 4096 / 8192 / 16384.
     pub window: usize,

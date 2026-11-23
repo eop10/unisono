@@ -6,4 +6,5 @@
 #![forbid(unsafe_code)]
 
 pub mod dsp;
+pub mod engine;
 pub mod music;
