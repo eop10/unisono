@@ -23,4 +23,8 @@ tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 tuner-core = { path = "../crates/tuner-core" }
 tuner-audio = { path = "../crates/tuner-audio" }
+tuner-storage = { path = "../crates/tuner-storage" }
 rtrb = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

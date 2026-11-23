@@ -110,8 +110,10 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-log",
  "tauri-plugin-opener",
+ "tempfile",
  "tuner-audio",
  "tuner-core",
+ "tuner-storage",
 ]
 
 [[package]]
@@ -4764,6 +4766,14 @@ dependencies = [
 [[package]]
 name = "tuner-storage"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "tuner-core",
+]
 
 [[package]]
 name = "typeid"

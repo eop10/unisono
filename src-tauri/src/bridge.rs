@@ -29,13 +29,15 @@ struct Session {
     analyzer: Option<JoinHandle<()>>,
 }
 
-/// Состояние приложения: движок (общий с анализатором), источник звука
-/// и сессия захвата. Настройки хранятся в конфиге движка; отдельное
-/// хранилище — этап 4B (tuner-storage).
+/// Состояние приложения: движок (общий с анализатором), источник звука,
+/// сессия захвата и хранилище настроек/пресетов (§5.2). Если каталог
+/// конфигурации недоступен, приложение работает, но настройки не
+/// переживают перезапуск — это не критичный путь.
 pub struct AppState {
     engine: Arc<Mutex<TunerEngine>>,
     source: Mutex<PlatformSource>,
     session: Mutex<Session>,
+    store: Mutex<Option<tuner_storage::Store>>,
 }
 
 /// DTO строя для команды `select_tuning`: UI присылает объект каталога
@@ -86,7 +88,13 @@ impl AppState {
                 listening: false,
                 analyzer: None,
             }),
+            store: Mutex::new(None),
         }
+    }
+
+    /// Подключает хранилище (вызывается из setup, когда известен каталог).
+    pub fn set_store(&self, store: tuner_storage::Store) {
+        *self.store.lock().expect("store") = Some(store);
     }
 
     /// Запускает захват: ring buffer → cpal → поток анализа → `on_state`.
@@ -190,6 +198,200 @@ impl AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Настройки для UI (camelCase-поля, lowercase-значения — так устроен
+/// `ui/src/lib/types.ts`): зеркало `tuner_storage::Settings` (§5.3).
+/// `schema_version` живёт только в файле, через UI не ходит.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDto {
+    pub reference_hz: f64,
+    pub instrument_id: String,
+    pub tuning_id: Option<String>,
+    pub notation: String,
+    pub theme: String,
+    pub language: String,
+    pub haptics: bool,
+    pub sound: bool,
+    pub tolerance_cents: u8,
+    pub sensitivity: String,
+    pub low_range: bool,
+    pub big_type: bool,
+    pub onboarding_done: bool,
+}
+
+impl From<tuner_storage::Settings> for SettingsDto {
+    fn from(s: tuner_storage::Settings) -> Self {
+        Self {
+            reference_hz: s.reference_hz,
+            instrument_id: s.instrument_id,
+            tuning_id: s.tuning_id,
+            notation: match s.notation {
+                tuner_storage::Notation::Solfeggio => "solfeggio".into(),
+                _ => "latin".into(),
+            },
+            theme: match s.theme {
+                tuner_storage::Theme::Light => "light".into(),
+                tuner_storage::Theme::Dark => "dark".into(),
+                _ => "system".into(),
+            },
+            language: match s.language {
+                tuner_storage::Language::En => "en".into(),
+                _ => "ru".into(),
+            },
+            haptics: s.haptics,
+            sound: s.sound,
+            tolerance_cents: s.tolerance_cents,
+            sensitivity: match s.sensitivity {
+                tuner_storage::Sensitivity::Low => "low".into(),
+                tuner_storage::Sensitivity::High => "high".into(),
+                _ => "normal".into(),
+            },
+            low_range: s.low_range,
+            big_type: s.big_type,
+            onboarding_done: s.onboarding_done,
+        }
+    }
+}
+
+impl From<SettingsDto> for tuner_storage::Settings {
+    fn from(dto: SettingsDto) -> Self {
+        // Незнакомые значения UI → дефолт; `sanitize` всё равно подстрахует.
+        Self {
+            schema_version: tuner_storage::SCHEMA_VERSION,
+            reference_hz: dto.reference_hz,
+            instrument_id: dto.instrument_id,
+            tuning_id: dto.tuning_id,
+            notation: match dto.notation.as_str() {
+                "solfeggio" => tuner_storage::Notation::Solfeggio,
+                _ => tuner_storage::Notation::Latin,
+            },
+            theme: match dto.theme.as_str() {
+                "light" => tuner_storage::Theme::Light,
+                "dark" => tuner_storage::Theme::Dark,
+                _ => tuner_storage::Theme::System,
+            },
+            language: match dto.language.as_str() {
+                "en" => tuner_storage::Language::En,
+                _ => tuner_storage::Language::Ru,
+            },
+            haptics: dto.haptics,
+            sound: dto.sound,
+            tolerance_cents: dto.tolerance_cents,
+            sensitivity: match dto.sensitivity.as_str() {
+                "low" => tuner_storage::Sensitivity::Low,
+                "high" => tuner_storage::Sensitivity::High,
+                _ => tuner_storage::Sensitivity::Normal,
+            },
+            low_range: dto.low_range,
+            big_type: dto.big_type,
+            onboarding_done: dto.onboarding_done,
+        }
+    }
+}
+
+/// Пользовательский строй для UI (§5.6): имя — плоская строка,
+/// `built_in` у пресетов всегда false, UI оборачивает имя в `Custom`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetDto {
+    pub id: String,
+    pub instrument_id: String,
+    pub name: String,
+    pub strings: Vec<u8>,
+}
+
+impl From<tuner_storage::PresetRecord> for PresetDto {
+    fn from(p: tuner_storage::PresetRecord) -> Self {
+        Self {
+            id: p.id,
+            instrument_id: p.instrument_id,
+            name: p.name,
+            strings: p.strings,
+        }
+    }
+}
+
+impl From<PresetDto> for tuner_storage::PresetRecord {
+    fn from(dto: PresetDto) -> Self {
+        Self {
+            id: dto.id,
+            instrument_id: dto.instrument_id,
+            name: dto.name,
+            strings: dto.strings,
+            built_in: false,
+        }
+    }
+}
+
+impl AppState {
+    /// Настройки для UI: из файла или дефолт — чтение не падает никогда.
+    pub fn settings_dto(&self) -> SettingsDto {
+        let store = self.store.lock().expect("store");
+        match store.as_ref() {
+            Some(store) => store.load_settings().into(),
+            None => tuner_storage::Settings::default().into(),
+        }
+    }
+
+    /// Сохранение настроек: ошибки логируются, не роняют приложение.
+    pub fn save_settings_dto(&self, dto: SettingsDto) {
+        let store = self.store.lock().expect("store");
+        let Some(store) = store.as_ref() else {
+            log::warn!("хранилище недоступно: настройки не сохранены");
+            return;
+        };
+        if let Err(e) = store.save_settings(&dto.into()) {
+            log::warn!("настройки не сохранены: {e}");
+        }
+    }
+
+    /// Пользовательские строи для UI; нет хранилища — пусто.
+    pub fn presets_dto(&self) -> Vec<PresetDto> {
+        let store = self.store.lock().expect("store");
+        match store.as_ref() {
+            Some(store) => store.load_presets().into_iter().map(Into::into).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Создать/обновить пресет; ошибки (лимит 20, битые струны) — в лог.
+    pub fn save_preset_dto(&self, dto: PresetDto) {
+        let store = self.store.lock().expect("store");
+        let Some(store) = store.as_ref() else {
+            log::warn!("хранилище недоступно: пресет не сохранён");
+            return;
+        };
+        let record = tuner_storage::PresetRecord::from(dto);
+        let mut presets = store.load_presets();
+        match presets.iter().position(|p| p.id == record.id) {
+            Some(i) => presets[i] = record,
+            None => presets.push(record),
+        }
+        if let Err(e) = store.save_presets(&presets) {
+            log::warn!("пресет не сохранён: {e}");
+        }
+    }
+
+    /// Удалить пресет по ID; встроенные строи здесь не проходят никогда
+    /// (UI не даёт), но и файл не содержит.
+    pub fn delete_preset(&self, id: &str) {
+        let store = self.store.lock().expect("store");
+        let Some(store) = store.as_ref() else {
+            log::warn!("хранилище недоступно: пресет не удалён");
+            return;
+        };
+        let mut presets = store.load_presets();
+        let before = presets.len();
+        presets.retain(|p| p.id != id);
+        if presets.len() == before {
+            return; // не было такого — файл не трогаем
+        }
+        if let Err(e) = store.save_presets(&presets) {
+            log::warn!("пресеты не сохранены: {e}");
+        }
     }
 }
 
@@ -299,5 +501,79 @@ mod tests {
         assert_eq!(config(&state).manual_string, Some(1));
         state.select_string(None);
         assert_eq!(config(&state).manual_string, None);
+    }
+
+    /// Полный цикл настроек через DTO и реальное хранилище во временном каталоге.
+    #[test]
+    fn settings_round_trip_via_dto_and_store() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = AppState::new();
+        state.set_store(tuner_storage::Store::open(dir.path()).expect("store"));
+        assert_eq!(
+            state.settings_dto(),
+            SettingsDto::from(tuner_storage::Settings::default())
+        );
+
+        let mut dto = state.settings_dto();
+        dto.reference_hz = 442.0;
+        dto.instrument_id = "bass".into();
+        dto.tuning_id = Some("bass5".into());
+        dto.language = "en".into();
+        dto.theme = "light".into();
+        dto.notation = "solfeggio".into();
+        dto.tolerance_cents = 5;
+        dto.sensitivity = "high".into();
+        dto.low_range = true;
+        dto.big_type = true;
+        dto.onboarding_done = true;
+        state.save_settings_dto(dto.clone());
+        assert_eq!(state.settings_dto(), dto, "файл переживает запись и чтение");
+    }
+
+    #[test]
+    fn presets_crud_via_dto_and_store() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = AppState::new();
+        state.set_store(tuner_storage::Store::open(dir.path()).expect("store"));
+        let preset = PresetDto {
+            id: "custom.1".into(),
+            instrument_id: "domra".into(),
+            name: "Мой".into(),
+            strings: vec![64, 69, 74],
+        };
+        state.save_preset_dto(preset.clone());
+        assert_eq!(state.presets_dto(), vec![preset.clone()]);
+        // Обновление по ID не плодит дубликаты.
+        let mut edited = preset.clone();
+        edited.strings = vec![55, 62, 69];
+        state.save_preset_dto(edited.clone());
+        assert_eq!(state.presets_dto(), vec![edited.clone()]);
+        // Удаление.
+        state.delete_preset(&edited.id);
+        assert!(state.presets_dto().is_empty());
+        // Удаление несуществующего — не паника и не запись файла.
+        state.delete_preset("custom.nothing");
+        assert!(state.presets_dto().is_empty());
+    }
+
+    /// Нет хранилища (каталог недоступен) — приложение работает: дефолты,
+    /// сохранение молча логируется, ничего не падает.
+    #[test]
+    fn storage_degrades_gracefully_without_store() {
+        let state = AppState::new();
+        assert_eq!(
+            state.settings_dto(),
+            SettingsDto::from(tuner_storage::Settings::default())
+        );
+        state.save_settings_dto(state.settings_dto());
+        assert!(state.presets_dto().is_empty());
+        state.save_preset_dto(PresetDto {
+            id: "custom.x".into(),
+            instrument_id: "guitar".into(),
+            name: "Мой".into(),
+            strings: vec![64],
+        });
+        state.delete_preset("custom.x");
+        assert!(state.presets_dto().is_empty());
     }
 }

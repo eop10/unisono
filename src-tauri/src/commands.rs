@@ -78,6 +78,36 @@ pub fn set_sensitivity(sensitivity: Sensitivity, state: State<'_, AppState>) {
     state.set_sensitivity(sensitivity);
 }
 
+/// Настройки, переживающие перезапуск (5.2–5.3): файл или дефолт.
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> crate::bridge::SettingsDto {
+    state.settings_dto()
+}
+
+/// Сохранение настроек: ошибки хранятся в логе, UI не роняют.
+#[tauri::command]
+pub fn save_settings(settings: crate::bridge::SettingsDto, state: State<'_, AppState>) {
+    state.save_settings_dto(settings);
+}
+
+/// Пользовательские строи из файла (5.6).
+#[tauri::command]
+pub fn get_presets(state: State<'_, AppState>) -> Vec<crate::bridge::PresetDto> {
+    state.presets_dto()
+}
+
+/// Создать/обновить пользовательский строй; лимит 20 проверяется в Rust.
+#[tauri::command]
+pub fn save_preset(preset: crate::bridge::PresetDto, state: State<'_, AppState>) {
+    state.save_preset_dto(preset);
+}
+
+/// Удалить пользовательский строй по ID.
+#[tauri::command]
+pub fn delete_preset(id: String, state: State<'_, AppState>) {
+    state.delete_preset(&id);
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

@@ -18,6 +18,11 @@ pub fn run() {
             commands::select_string,
             commands::set_tolerance,
             commands::set_sensitivity,
+            commands::get_settings,
+            commands::save_settings,
+            commands::get_presets,
+            commands::save_preset,
+            commands::delete_preset,
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
@@ -28,6 +33,17 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Каталог конфигурации: настройки и пресеты переживают перезапуск (5.2).
+            match app.path().app_config_dir() {
+                Ok(dir) => {
+                    let state = app.state::<bridge::AppState>();
+                    match tuner_storage::Store::open(&dir) {
+                        Ok(store) => state.set_store(store),
+                        Err(e) => log::warn!("хранилище недоступно: {e}"),
+                    }
+                }
+                Err(e) => log::warn!("каталог конфигурации недоступен: {e}"),
+            }
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
