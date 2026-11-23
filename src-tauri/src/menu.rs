@@ -3,7 +3,9 @@
 //! Hide / Hide Others / Show All, «Выход» ⌘Q; Правка для полей ввода.
 //! Не-macOS — минимальное меню (Настройки, Выход), без macOS-специфики.
 
-use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadata, SubmenuBuilder};
+use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::{AppHandle, Emitter};
 
 /// «Настройки…» ⌘,: общий пункт для всех платформ.
