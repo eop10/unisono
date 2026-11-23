@@ -18,6 +18,12 @@ vi.mock('../src/ipc/commands', () => ({
   selectString: async () => {},
   setTolerance: async () => {},
   setSensitivity: async () => {},
+  setLowRange: async () => {},
+  getSettings: async () => null,
+  saveSettings: async () => {},
+  getPresets: async () => [],
+  savePreset: async () => {},
+  deletePreset: async () => {},
 }));
 
 import TunerScreen from '../src/lib/TunerScreen.svelte';

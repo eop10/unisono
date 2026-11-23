@@ -10,7 +10,7 @@
   import type { Tuning } from '../lib/types';
   import { MIDI_MAX, MIDI_MIN, NAME_MAX, validateTuning } from '../lib/validate';
   import { instruments, tuningsFor } from '../stores/catalog';
-  import { customs, newPresetId, savePreset } from '../stores/customs';
+  import { customs, deletePreset, newPresetId, savePreset } from '../stores/customs';
   import { closeOverlay, editorContext } from '../stores/overlay';
   import { selectTuning, settings } from '../stores/settings';
 
@@ -24,6 +24,8 @@
   let name = $state('');
   let strings = $state<number[]>([]);
   let error = $state<ReturnType<typeof validateTuning>>(null);
+  /** Удаление — два тапа: второй подтверждает (нативные диалоги не надёжны). */
+  let confirmDelete = $state(false);
 
   /** Новый строй по умолчанию — струны текущего строя инструмента (гитара → 6). */
   function defaultStrings(instrumentId: string): number[] {
@@ -69,6 +71,24 @@
     };
     savePreset(tuning);
     selectTuning(ctx.instrumentId, tuning.id);
+    closeOverlay();
+  }
+
+  /** Удаление пользовательского строя (5.7): встроенные не удаляются.
+   *  Если удалён активный — выбираем первый встроенный и шлём движку. */
+  function remove() {
+    if (!ctx || !editing) return;
+    if (!confirmDelete) {
+      confirmDelete = true;
+      return;
+    }
+    const wasActive =
+      get(settings).instrumentId === ctx.instrumentId && get(settings).tuningId === editing.id;
+    deletePreset(editing.id);
+    if (wasActive) {
+      const first = tuningsFor(ctx.instrumentId).find((tun) => tun.built_in);
+      if (first) selectTuning(ctx.instrumentId, first.id);
+    }
     closeOverlay();
   }
 </script>
@@ -124,6 +144,12 @@
       <p class="err" role="alert">{t(lang, error)}</p>
     {/if}
     <div class="actions">
+      {#if editing}
+        <!-- Пользовательский строй можно удалить; встроенных в редакторе нет (5.7). -->
+        <button class="btn danger" onclick={remove}>
+          {confirmDelete ? t(lang, 'confirm_delete') : t(lang, 'delete_tuning')}
+        </button>
+      {/if}
       <button class="btn ghost" onclick={closeOverlay}>{t(lang, 'cancel')}</button>
       <button class="btn primary" onclick={save}>{t(lang, 'save')}</button>
     </div>

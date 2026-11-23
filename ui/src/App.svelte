@@ -1,7 +1,7 @@
 <script lang="ts">
-  //! Оболочка: тема, язык, каталог из ядра, листы, автостарт прослушивания.
-  //! Демо-панель — только DEV/?demo вне production (Prompt 1.3): в собранном
-  //! приложении её нет.
+  //! Оболочка: тема, язык, каталог из ядра, настройки и пресеты из storage,
+  //! затем движок и прослушивание. Демо-панель — только DEV/?demo вне
+  //! production (Prompt 1.3): в собранном приложении её нет.
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import DemoPanel from './lib/DemoPanel.svelte';
@@ -13,7 +13,8 @@
   import { t } from './lib/i18n';
   import { catalogError, loadCatalog } from './stores/catalog';
   import { overlay } from './stores/overlay';
-  import { settings } from './stores/settings';
+  import { applySettingsToEngine, loadSettings, settings } from './stores/settings';
+  import { loadPresets } from './stores/customs';
   import { startListening } from './stores/tuner';
 
   const s = $derived($settings);
@@ -24,10 +25,15 @@
 
   let systemLight = $state(false);
   onMount(() => {
-    // Каталог из ядра; под Tauri — сразу начинаем слушать (4A).
-    void loadCatalog().then(() => {
-      if (!get(catalogError)) void startListening();
-    });
+    // Порядок старта (part 2): каталог → настройки → пресеты → движок → звук.
+    void (async () => {
+      await loadCatalog();
+      if (get(catalogError)) return; // без каталога не слушаем (как раньше)
+      await loadSettings();
+      await loadPresets();
+      await applySettingsToEngine();
+      void startListening();
+    })();
     const mq = window.matchMedia('(prefers-color-scheme: light)');
     const apply = () => {
       systemLight = mq.matches;

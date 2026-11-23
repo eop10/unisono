@@ -78,6 +78,12 @@ pub fn set_sensitivity(sensitivity: Sensitivity, state: State<'_, AppState>) {
     state.set_sensitivity(sensitivity);
 }
 
+/// «Низкий диапазон» (5.3): окно 16384 в хроматическом режиме.
+#[tauri::command]
+pub fn set_low_range(low_range: bool, state: State<'_, AppState>) {
+    state.set_low_range(low_range);
+}
+
 /// Настройки, переживающие перезапуск (5.2–5.3): файл или дефолт.
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> crate::bridge::SettingsDto {

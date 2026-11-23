@@ -2,7 +2,15 @@
 //! serde-вывода ядра; аудио-логики в JS нет.
 
 import { Channel, invoke } from '@tauri-apps/api/core';
-import type { Catalog, Sensitivity, TunerState, Tuning } from '../lib/types';
+import type { Catalog, Sensitivity, Settings, TunerState, Tuning } from '../lib/types';
+
+/** Пользовательский строй для IPC (§5.6): имя — плоская строка. */
+export interface PresetDto {
+  id: string;
+  instrumentId: string;
+  name: string;
+  strings: number[];
+}
 
 export async function getCatalog(): Promise<Catalog> {
   return await invoke<Catalog>('get_catalog');
@@ -40,4 +48,31 @@ export async function setTolerance(cents: number): Promise<void> {
 
 export async function setSensitivity(sensitivity: Sensitivity): Promise<void> {
   await invoke('set_sensitivity', { sensitivity });
+}
+
+/** «Низкий диапазон» (5.3): окно 16384 в хроматике. */
+export async function setLowRange(lowRange: boolean): Promise<void> {
+  await invoke('set_low_range', { lowRange });
+}
+
+/** Настройки, переживающие перезапуск (5.2–5.3). */
+export async function getSettings(): Promise<Settings> {
+  return await invoke<Settings>('get_settings');
+}
+
+export async function saveSettings(settings: Settings): Promise<void> {
+  await invoke('save_settings', { settings });
+}
+
+/** Пользовательские строи из файла (5.6). */
+export async function getPresets(): Promise<PresetDto[]> {
+  return await invoke<PresetDto[]>('get_presets');
+}
+
+export async function savePreset(preset: PresetDto): Promise<void> {
+  await invoke('save_preset', { preset });
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  await invoke('delete_preset', { id });
 }

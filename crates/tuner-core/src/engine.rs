@@ -87,6 +87,8 @@ pub struct EngineConfig {
     pub sensitivity: Sensitivity,
     /// Индекс выбранной струны; `None` — автоопределение.
     pub manual_string: Option<usize>,
+    /// «Низкий диапазон» (5.3): окно 16384 в хроматическом режиме (4.2.3).
+    pub low_range: bool,
 }
 
 /// Результат сопоставления частоты с целью.
@@ -417,8 +419,8 @@ impl TunerEngine {
 fn detector_config(config: &EngineConfig, fs: u32) -> DetectorConfig {
     let mut cfg = match &config.tuning {
         Some(tuning) => DetectorConfig::for_tuning(tuning, config.a4, fs),
-        // Хроматика: базовые 4096; «Низкий диапазон» подъедет с настройками (4B).
-        None => DetectorConfig::for_chromatic(false, fs),
+        // Хроматика: 4096, с «Низким диапазоном» — 16384 (4.2.3, D-3).
+        None => DetectorConfig::for_chromatic(config.low_range, fs),
     };
     cfg.gate_db = GATE_DB;
     cfg.clarity_min = config.sensitivity.clarity_min();
@@ -440,6 +442,7 @@ mod tests {
             tolerance_cents: 3.0,
             sensitivity: Sensitivity::Normal,
             manual_string: None,
+            low_range: false,
         }
     }
 
@@ -675,6 +678,7 @@ mod tests {
             tolerance_cents: 3.0,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
+            low_range: false,
         };
         // A2 точно — выбранная струна.
         let o = matcher.match_f0(note::hz(45, 440.0), &cfg);
@@ -695,6 +699,7 @@ mod tests {
             tolerance_cents: 3.0,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
+            low_range: false,
         };
         let o = matcher.match_f0(note::hz(64, 440.0), &cfg_b);
         assert_eq!(o.string_indices, vec![0, 1]);
@@ -718,6 +723,7 @@ mod tests {
             tolerance_cents: 3.0,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(0), // E2
+            low_range: false,
         };
         let mut e = TunerEngine::new(cfg, FS);
         // Сначала точно E2 — tracking на выбранной струне.
@@ -855,5 +861,20 @@ mod tests {
         e.set_config(config(Some(bass5), 440.0));
         assert_eq!(e.window(), 16384);
         assert_eq!(engine(None, 440.0).window(), 4096);
+    }
+
+    #[test]
+    fn low_range_switches_chromatic_window() {
+        // «Низкий диапазон» (5.3): окно хроматики 4096 → 16384 (4.2.3, D-3).
+        let mut e = engine(None, 440.0);
+        assert_eq!(e.window(), 4096);
+        e.set_config(EngineConfig {
+            low_range: true,
+            ..config(None, 440.0)
+        });
+        assert_eq!(e.window(), 16384);
+        // Выключение возвращает базовое окно.
+        e.set_config(config(None, 440.0));
+        assert_eq!(e.window(), 4096);
     }
 }

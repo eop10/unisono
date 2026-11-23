@@ -69,6 +69,8 @@ const D = {
   reset: { ru: 'Сбросить настройки', en: 'Reset settings' },
   editor_new: { ru: 'Новый строй', en: 'New tuning' },
   editor_edit: { ru: 'Изменение строя', en: 'Edit tuning' },
+  delete_tuning: { ru: 'Удалить', en: 'Delete' },
+  confirm_delete: { ru: 'Точно удалить?', en: 'Delete for sure?' },
   name: { ru: 'Название', en: 'Name' },
   strings: { ru: 'Струны', en: 'Strings' },
   add_string: { ru: '＋ струна', en: '＋ string' },

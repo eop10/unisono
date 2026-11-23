@@ -18,6 +18,7 @@ pub fn run() {
             commands::select_string,
             commands::set_tolerance,
             commands::set_sensitivity,
+            commands::set_low_range,
             commands::get_settings,
             commands::save_settings,
             commands::get_presets,

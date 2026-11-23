@@ -78,6 +78,7 @@ impl AppState {
                 tolerance_cents: 3.0,
                 sensitivity: Sensitivity::Normal,
                 manual_string: None,
+                low_range: false,
             },
             48_000,
         );
@@ -192,6 +193,11 @@ impl AppState {
     /// Чувствительность входного гейта.
     pub fn set_sensitivity(&self, sensitivity: Sensitivity) {
         self.with_config(|c| c.sensitivity = sensitivity);
+    }
+
+    /// «Низкий диапазон»: окно хроматического режима (4.2.3).
+    pub fn set_low_range(&self, low_range: bool) {
+        self.with_config(|c| c.low_range = low_range);
     }
 }
 

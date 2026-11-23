@@ -68,6 +68,8 @@ export interface Settings {
   lowRange: boolean;
   haptics: boolean;
   sound: boolean;
+  /** UI не показывает, но сохраняет (5.3); в файле, не в DTO — нет, ходит через DTO. */
+  onboardingDone: boolean;
 }
 
 export type Overlay = null | 'instrument' | 'reference' | 'settings' | 'editor';

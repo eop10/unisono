@@ -170,6 +170,7 @@ mod tests {
                 tolerance_cents: 3.0,
                 sensitivity: Sensitivity::Normal,
                 manual_string: None,
+                low_range: false,
             },
             48_000,
         )))
@@ -238,6 +239,7 @@ mod tests {
             tolerance_cents: 3.0,
             sensitivity: Sensitivity::Normal,
             manual_string: None,
+            low_range: false,
         });
         let b0: f64 = 440.0 * 2f64.powf((23.0 - 69.0) / 12.0); // B0 = 30,87 Гц
         for i in 0..16384 + 4 * HOP {
