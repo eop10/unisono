@@ -1,5 +1,221 @@
 //! tuner-audio: захват микрофона и передача `f32`-кадров анализатору.
 //!
-//! Trait `AudioSource`; бэкенды `cpal` (macOS/Windows/Linux) и `oboe` (Android)
-//! подключаются на этапе 4–5. Real-time колбэк без аллокаций и блокировок:
-//! только `rtrb::Producer` (docs/source/03_architecture.md, 3.6).
+//! Trait `AudioSource` (docs/source/07_platform.md): бэкенд `cpal` — desktop
+//! (macOS/WASAPI/ALSA), `oboe` — Android, этап 5. Real-time колбэк без
+//! аллокаций и блокировок: только `rtrb::Producer` и счётчик переполнений
+//! (docs/source/03_architecture.md, 3.6). Крейт не знает про Tauri и UI:
+//! состояния отдаёт колбэк `TunerState`.
+
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
+
+use tuner_core::engine::{TunerEngine, TunerState, HOP};
+
+/// Ёмкость ring buffer: ~1 с при 48 кГц (3.6).
+pub const RING_CAPACITY: usize = 48_000;
+
+/// Ошибки аудио-слоя (3.6, 7.2.1): значения, не паники. Доходят до bridge
+/// и дальше в UI как состояния `Error`/`NoPermission`, а не как крах.
+#[derive(Debug, thiserror::Error)]
+pub enum AudioError {
+    /// Нет устройства ввода.
+    #[error("нет устройства ввода")]
+    NoInputDevice,
+    /// Разрешение на микрофон не выдано или отозвано (TCC/системные настройки).
+    #[error("нет доступа к микрофону")]
+    PermissionDenied,
+    /// Устройство занято или недоступно.
+    #[error("микрофон занят или недоступен: {0}")]
+    Device(String),
+    /// Поток не удалось запустить.
+    #[error("не удалось запустить поток: {0}")]
+    Stream(String),
+}
+
+/// Источник звука (7): открыть микрофон, отдавать `f32`-кадры в канал.
+///
+/// Реализация обязана держать реал-тайм-обещание: колбэк не аллоцирует,
+/// не блокируется и не логирует (3.6) — только запись в `rtrb::Producer`.
+pub trait AudioSource: Send {
+    /// Фактическая частота дискретизации, установленная устройством.
+    /// Осмысленна после успешного `start`.
+    fn sample_rate(&self) -> u32;
+    /// Запускает поток; кадры `f32` (моно) уходят в `sink` без аллокаций.
+    fn start(&mut self, sink: rtrb::Producer<f32>) -> Result<(), AudioError>;
+    /// Останавливает поток и освобождает устройство; `start` открывает заново.
+    fn stop(&mut self);
+}
+
+/// Запускает поток анализа (3.6): ring buffer → окно движка → `on_state`.
+///
+/// Поток живёт, пока жив `Producer` (его держит аудио-колбэк). При остановке
+/// захвата `Consumer::is_abandoned()` становится true, и поток выходит сам:
+/// «окно живёт отдельно от аудио». Окно 4096/8192/16384 перечитывается у
+/// движка после каждого кадра — смена строя переключает его на ходу.
+///
+/// `engine` — общий с bridge (`Arc<Mutex>`): команды меняют конфиг через
+/// `set_config` под тем же замком; контендиции нет (≈47 Гц, без аудио-пути).
+pub fn spawn_analyzer(
+    mut consumer: rtrb::Consumer<f32>,
+    engine: Arc<Mutex<TunerEngine>>,
+    fs: u32,
+    mut on_state: impl FnMut(TunerState) + Send + 'static,
+) -> JoinHandle<()> {
+    std::thread::Builder::new()
+        .name("unisono-analyzer".into())
+        .spawn(move || {
+            let mut buffer: Vec<f32> = Vec::with_capacity(16_384);
+            let mut window = engine.lock().map(|e| e.window()).unwrap_or(4096);
+            loop {
+                // Наполняем буфер до текущего окна.
+                while buffer.len() < window {
+                    match consumer.pop() {
+                        Ok(sample) => buffer.push(sample),
+                        Err(_) => {
+                            if consumer.is_abandoned() {
+                                return; // захват остановлен
+                            }
+                            // Данных пока нет: не жжём CPU.
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                    }
+                }
+                let Ok(mut eng) = engine.lock() else {
+                    return; // движок отравлен — выходим тихо
+                };
+                let state = eng.process_frame(&mut buffer[..window], fs);
+                on_state(state);
+                // Шаг hop: для тюнера важно «сейчас», история не копится.
+                let hop = HOP.min(buffer.len());
+                buffer.copy_within(hop.., 0);
+                buffer.truncate(buffer.len() - hop);
+                window = eng.window();
+            }
+        })
+        .expect("не удалось создать поток анализа")
+}
+
+#[cfg(not(target_os = "android"))]
+mod cpal_source;
+
+/// Бэкенд по умолчанию для desktop-платформ (7.0); Android получит `oboe`
+/// на этапе 5.
+#[cfg(not(target_os = "android"))]
+pub use cpal_source::CpalSource as PlatformSource;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tuner_core::engine::{EngineConfig, Sensitivity};
+    use tuner_core::music::{InstrumentRegistry, Tuning};
+
+    fn guitar() -> Tuning {
+        InstrumentRegistry::new()
+            .tuning("guitar", "standard_e")
+            .unwrap()
+            .clone()
+    }
+
+    fn engine() -> Arc<Mutex<TunerEngine>> {
+        Arc::new(Mutex::new(TunerEngine::new(
+            EngineConfig {
+                tuning: Some(guitar()),
+                a4: 440.0,
+                tolerance_cents: 3.0,
+                sensitivity: Sensitivity::Normal,
+                manual_string: None,
+            },
+            48_000,
+        )))
+    }
+
+    /// Полный конвейер без железа: producer → ring buffer → анализатор → состояние.
+    /// Проверяет окно 4096, шаг hop и чистый выход при закрытии producer.
+    #[test]
+    fn analyzer_emits_states_and_exits_on_close() {
+        let (mut producer, consumer) = rtrb::RingBuffer::new(4096 + 4 * HOP);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = spawn_analyzer(consumer, engine(), 48_000, move |st| {
+            let _ = tx.send(st);
+        });
+
+        // Синус E2 (82,41 Гц): окно 4096 + три шага hop.
+        let f: f64 = 440.0 * 2f64.powf((40.0 - 69.0) / 12.0);
+        for i in 0..4096 + 3 * HOP {
+            let t = i as f64 / 48_000.0;
+            let _ = producer.push((0.1 * (2.0 * std::f64::consts::PI * f * t).sin()) as f32);
+        }
+
+        // Первое окно даёт tracking с нотой E2; дальше — каждые hop.
+        let st = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("состояние пришло");
+        assert_eq!(st.note_midi, Some(40));
+        assert_eq!(st.string_indices, vec![0]);
+        assert!(st.cents.unwrap().abs() < 1.5);
+
+        // Закрытие producer останавливает поток без паники.
+        drop(producer);
+        handle.join().expect("анализатор вышел чисто");
+    }
+
+    #[test]
+    fn analyzer_survives_window_change_mid_stream() {
+        // Балалайка — окно тоже 4096; бас-5 — 16384: смена строя на ходу.
+        let (mut producer, consumer) = rtrb::RingBuffer::new(16384 + 4 * HOP);
+        let bass = InstrumentRegistry::new()
+            .tuning("bass", "bass5")
+            .unwrap()
+            .clone();
+        let engine = engine();
+        let (tx, rx) = std::sync::mpsc::channel::<TunerState>();
+        let handle = spawn_analyzer(consumer, Arc::clone(&engine), 48_000, move |st| {
+            let _ = tx.send(st);
+        });
+
+        // Начало: гитара, окно 4096 — наполняем и получаем состояние.
+        let f: f64 = 440.0 * 2f64.powf((40.0 - 69.0) / 12.0);
+        for i in 0..4096 {
+            let t = i as f64 / 48_000.0;
+            let _ = producer.push((0.1 * (2.0 * std::f64::consts::PI * f * t).sin()) as f32);
+        }
+        let st = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("кадр гитары");
+        assert_eq!(st.note_midi, Some(40));
+
+        // Смена строя на бас: окно вырастает до 16384, анализатор продолжает.
+        // Переходные кадры (остаток буфера гитары) пропускаем — ждём чистый B0.
+        engine.lock().unwrap().set_config(EngineConfig {
+            tuning: Some(bass),
+            a4: 440.0,
+            tolerance_cents: 3.0,
+            sensitivity: Sensitivity::Normal,
+            manual_string: None,
+        });
+        let b0: f64 = 440.0 * 2f64.powf((23.0 - 69.0) / 12.0); // B0 = 30,87 Гц
+        for i in 0..16384 + 4 * HOP {
+            let t = i as f64 / 48_000.0;
+            let _ = producer.push((0.2 * (2.0 * std::f64::consts::PI * b0 * t).sin()) as f32);
+        }
+        let start = std::time::Instant::now();
+        let mut saw_b0 = false;
+        while !saw_b0 {
+            assert!(
+                start.elapsed() < Duration::from_secs(20),
+                "анализатор не дошёл до чистого кадра баса"
+            );
+            let st = rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("поток состояний жив");
+            if st.note_midi == Some(23) {
+                saw_b0 = true;
+                assert_eq!(st.string_indices, vec![0]);
+            }
+        }
+
+        drop(producer);
+        handle.join().expect("анализатор вышел чисто");
+    }
+}

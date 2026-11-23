@@ -6,3 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rtrb = "0.3"
+thiserror = "2"
+tracing = "0.1"
+tuner-core = { path = "../tuner-core" }
+
+# cpal не собирается под Android; там будет oboe (этап 5, 7.1.2).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+cpal = "0.15"
