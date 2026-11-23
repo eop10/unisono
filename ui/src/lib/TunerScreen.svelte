@@ -120,10 +120,9 @@
     <div class="state-screen">
       <h2>{st.kind === 'error' ? t(lang, 'error_title') : t(lang, 'perm_title')}</h2>
       <p>{st.kind === 'error' ? t(lang, 'error_text') : t(lang, 'perm_text')}</p>
-      {#if st.kind === 'error'}
-        <button class="btn primary" onclick={() => void startListening()}>{t(lang, 'retry')}</button>
-      {:else}
-        <button class="btn primary" onclick={openMicSettings}>{t(lang, 'perm_settings')}</button>
+      <button class="btn primary" onclick={() => void startListening()}>{t(lang, 'retry')}</button>
+      {#if st.kind === 'nopermission'}
+        <button class="btn" onclick={openMicSettings}>{t(lang, 'perm_settings')}</button>
       {/if}
     </div>
   {:else}

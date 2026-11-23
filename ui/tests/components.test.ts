@@ -104,6 +104,21 @@ describe('tuner screen: cents in Uncertain (6.3.2)', () => {
     // Игла на месте (последняя позиция), 1.6 — толщина иглы в CentsGauge.
     expect(gauge.querySelector('line[stroke-width="1.6"]')).not.toBeNull();
   });
+
+  it('nopermission shows retry and settings buttons, retry calls startListening', async () => {
+    setState({ kind: 'nopermission' });
+    const { container } = render(TunerScreen);
+    await tick();
+
+    const buttons = [...container.querySelectorAll('.state-screen button')] as HTMLButtonElement[];
+    expect(buttons.length).toBe(2);
+    expect(buttons[0].classList.contains('primary')).toBe(true);
+    expect(buttons[0].textContent?.trim()).toBe('Повторить');
+    expect(buttons[1].textContent?.trim()).toBe('Открыть настройки');
+
+    await fireEvent.click(buttons[0]);
+    expect(ipc.startListening).toHaveBeenCalled();
+  });
 });
 
 describe('tuning editor defaults (5.7)', () => {
