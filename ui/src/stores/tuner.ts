@@ -1,48 +1,70 @@
-//! Мок состояния тюнера (этап 3: аудио нет). Демо-панель переключает состояния.
-//! Целевые частоты считает мок-бэкенд от опорной A4 — в UI нет DSP/аудио-логики.
+//! Состояние тюнера: поток из Rust через Channel (этап 4A, 3.6).
+//! Аудио-логики в UI нет: захват, DSP и выбор струны — в Rust. Стор хранит
+//! последнее состояние и превращает аудио-ошибки в `error`/`nopermission`.
 
 import { get, writable } from 'svelte/store';
+import { Channel } from '@tauri-apps/api/core';
 import type { TunerKind, TunerState } from '../lib/types';
+import {
+  selectString as ipcSelectString,
+  startListening as ipcStart,
+  stopListening as ipcStop,
+} from '../ipc/commands';
 import { settings } from './settings';
 
-function hz(midi: number, a4: number): number {
-  return a4 * 2 ** ((midi - 69) / 12);
-}
-
-const initial: TunerState = {
-  kind: 'tracking',
-  cents: -7,
-  clarity: 0.97,
-  db: -24,
-  noteMidi: 40,
-  targetHz: hz(40, 440),
-  f0: hz(40, 440) * 2 ** (-7 / 1200),
-  stringIndices: [0],
+const SILENT: TunerState = {
+  kind: 'silent',
+  f0: null,
+  cents: null,
+  clarity: 0,
+  db: -60,
+  noteMidi: null,
+  targetHz: null,
+  stringIndices: [],
 };
 
-export const tuner = writable<TunerState>({ ...initial });
+export const tuner = writable<TunerState>({ ...SILENT });
+export const listening = writable(false);
 
-function retarget(midi: number | null): void {
-  const a4 = get(settings).referenceHz;
-  tuner.update((t) => {
-    const targetHz = midi === null ? null : hz(midi, a4);
-    const f0 = targetHz === null || t.cents === null ? null : targetHz * 2 ** (t.cents / 1200);
-    return { ...t, noteMidi: midi, targetHz, f0 };
-  });
+/** Аудио-ошибка → экран (4.4): отказ в доступе или сбой устройства. */
+function audioErrorState(err: unknown): TunerState {
+  const kind: TunerKind = err === 'PermissionDenied' ? 'nopermission' : 'error';
+  return { ...SILENT, kind };
 }
 
-// Смена опорной частоты пересчитывает цели без скачка индикатора (4.3.5).
-settings.subscribe((s) => {
-  const t = get(tuner);
-  if (t.noteMidi !== null) {
-    const targetHz = hz(t.noteMidi, s.referenceHz);
-    tuner.update((x) => ({
-      ...x,
-      targetHz,
-      f0: x.cents === null ? null : targetHz * 2 ** (x.cents / 1200),
-    }));
+export async function startListening(): Promise<void> {
+  const channel = new Channel<TunerState>();
+  channel.onmessage = (state) => tuner.set(state);
+  try {
+    await ipcStart(channel);
+    listening.set(true);
+  } catch (e) {
+    listening.set(false);
+    tuner.set(audioErrorState(e));
   }
-});
+}
+
+export async function stopListening(): Promise<void> {
+  await ipcStop();
+  listening.set(false);
+  tuner.set({ ...SILENT });
+}
+
+export async function toggleListening(): Promise<void> {
+  if (get(listening)) await stopListening();
+  else await startListening();
+}
+
+/** Тап по чипу струны: унисон-пара выбирается целиком (ФТ-15), тап по
+ * активной струне возвращает автоопределение. Пара живёт в движке. */
+export function selectString(indices: number[], _midi: number): void {
+  const current = get(tuner).stringIndices;
+  const active = indices.length > 0 && indices.every((i) => current.includes(i));
+  void ipcSelectString(active ? null : (indices[0] ?? null));
+}
+
+// ---- Демо-панель (DEV/?demo): локальные состояния поверх реального потока.
+// Первое действие панели останавливает прослушивание (см. DemoPanel).
 
 export function demoSetKind(kind: TunerKind): void {
   tuner.update((t) => ({
@@ -61,22 +83,20 @@ export function demoSetCents(cents: number): void {
         : Math.abs(cents) <= get(settings).toleranceCents
           ? 'intune'
           : 'tracking';
-    return {
-      ...t,
-      cents,
-      kind,
-      f0: t.targetHz === null ? null : t.targetHz * 2 ** (cents / 1200),
-    };
+    const targetHz = t.targetHz ?? 440;
+    return { ...t, cents, kind, f0: targetHz * 2 ** (cents / 1200), targetHz };
   });
 }
 
-/** Тап по чипу струны: унисон-пара выбирается целиком (ФТ-15). */
-export function selectString(indices: number[], midi: number): void {
-  tuner.update((t) => ({ ...t, stringIndices: indices }));
-  retarget(midi);
-}
-
 export function demoReset(): void {
-  tuner.set({ ...initial, targetHz: hz(40, get(settings).referenceHz) });
-  retarget(40);
+  tuner.set({
+    kind: 'tracking',
+    cents: -7,
+    clarity: 0.97,
+    db: -24,
+    noteMidi: 40,
+    targetHz: 440 * 2 ** ((40 - 69) / 12),
+    f0: 440 * 2 ** ((40 - 69) / 12) * 2 ** (-7 / 1200),
+    stringIndices: [0],
+  });
 }

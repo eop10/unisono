@@ -1,20 +1,39 @@
 <script lang="ts">
-  //! Демо-панель: не часть интерфейса, только DEV или ?demo (Prompt 1.3).
+  //! Демо-панель: не часть интерфейса, только DEV/?demo (Prompt 1.3).
+  //! Работает поверх реального потока: любое действие сначала останавливает
+  //! прослушивание, иначе движок перезапишет демо-состояние.
   import { t } from '../lib/i18n';
   import type { TunerKind } from '../lib/types';
   import { currentTuning, settings } from '../stores/settings';
-  import { demoReset, demoSetCents, demoSetKind, selectString, tuner } from '../stores/tuner';
+  import {
+    demoReset,
+    demoSetCents,
+    demoSetKind,
+    selectString,
+    stopListening,
+    tuner,
+  } from '../stores/tuner';
 
   const lang = $derived($settings.language);
   const st = $derived($tuner);
   const tun = $derived($currentTuning);
   const kinds: TunerKind[] = ['tracking', 'intune', 'silent', 'uncertain', 'error', 'nopermission'];
+
+  /** Демо берёт управление: сначала стоп реального захвата. */
+  async function takeover(apply: () => void): Promise<void> {
+    await stopListening();
+    apply();
+  }
 </script>
 
 <aside class="demo" aria-label="demo">
   <span class="badge">demo</span>
   <label for="demo-kind">{t(lang, 'settings')}</label>
-  <select id="demo-kind" value={st.kind} onchange={(e) => demoSetKind(e.currentTarget.value as TunerKind)}>
+  <select
+    id="demo-kind"
+    value={st.kind}
+    onchange={(e) => void takeover(() => demoSetKind(e.currentTarget.value as TunerKind))}
+  >
     {#each kinds as k}
       <option value={k}>{k}</option>
     {/each}
@@ -27,7 +46,7 @@
     max="50"
     step="1"
     value={st.cents ?? 0}
-    oninput={(e) => demoSetCents(Number(e.currentTarget.value))}
+    oninput={(e) => void takeover(() => demoSetCents(Number(e.currentTarget.value)))}
   />
   {#if tun}
     <label for="demo-string">{t(lang, 'strings')}</label>
@@ -38,7 +57,7 @@
         const i = Number(e.currentTarget.value);
         const midi = tun.strings[i];
         const indices = tun.strings.map((m, j) => (m === midi ? j : -1)).filter((j) => j >= 0);
-        selectString(indices, midi);
+        void takeover(() => selectString(indices, midi));
       }}
     >
       {#each tun.strings as m, i}
@@ -46,5 +65,5 @@
       {/each}
     </select>
   {/if}
-  <button class="btn ghost" onclick={demoReset}>reset</button>
+  <button class="btn ghost" onclick={() => void takeover(demoReset)}>reset</button>
 </aside>

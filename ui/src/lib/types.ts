@@ -36,7 +36,8 @@ export type TunerKind =
   | 'error'
   | 'nopermission';
 
-/** Мок состояния тюнера: на этапе 3 аудио нет, поток приходит из демо-панели. */
+/** Состояние тюнера из движка (канал 30–60 Гц). kind `error`/`nopermission`
+ *  ставит UI-стор из ошибок команд захвата; движок их не шлёт (4.4). */
 export interface TunerState {
   kind: TunerKind;
   f0: number | null;

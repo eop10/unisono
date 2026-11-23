@@ -17,7 +17,9 @@ pub const RING_CAPACITY: usize = 48_000;
 
 /// Ошибки аудио-слоя (3.6, 7.2.1): значения, не паники. Доходят до bridge
 /// и дальше в UI как состояния `Error`/`NoPermission`, а не как крах.
-#[derive(Debug, thiserror::Error)]
+/// `Serialize` — тип ошибки команды `start_listening` в Tauri.
+#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AudioError {
     /// Нет устройства ввода.
     #[error("нет устройства ввода")]

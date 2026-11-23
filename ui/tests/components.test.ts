@@ -10,6 +10,14 @@ import { mockCatalog } from './mockCatalog';
 
 vi.mock('../src/ipc/commands', () => ({
   getCatalog: async () => mockCatalog,
+  startListening: async () => {},
+  stopListening: async () => {},
+  setReference: async () => {},
+  selectInstrument: async () => {},
+  selectTuning: async () => {},
+  selectString: async () => {},
+  setTolerance: async () => {},
+  setSensitivity: async () => {},
 }));
 
 import TunerScreen from '../src/lib/TunerScreen.svelte';

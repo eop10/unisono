@@ -1,6 +1,9 @@
 <script lang="ts">
-  //! Оболочка: тема, язык, каталог из ядра, листы, демо-панель (DEV/?demo).
+  //! Оболочка: тема, язык, каталог из ядра, листы, автостарт прослушивания.
+  //! Демо-панель — только DEV/?demo вне production (Prompt 1.3): в собранном
+  //! приложении её нет.
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import DemoPanel from './lib/DemoPanel.svelte';
   import InstrumentSheet from './lib/InstrumentSheet.svelte';
   import ReferenceSheet from './lib/ReferenceSheet.svelte';
@@ -11,14 +14,20 @@
   import { catalogError, loadCatalog } from './stores/catalog';
   import { overlay } from './stores/overlay';
   import { settings } from './stores/settings';
+  import { startListening } from './stores/tuner';
 
   const s = $derived($settings);
   const showDemo =
-    import.meta.env.DEV || new URLSearchParams(window.location.search).has('demo');
+    import.meta.env.DEV ||
+    (import.meta.env.MODE !== 'production' &&
+      new URLSearchParams(window.location.search).has('demo'));
 
   let systemLight = $state(false);
   onMount(() => {
-    void loadCatalog();
+    // Каталог из ядра; под Tauri — сразу начинаем слушать (4A).
+    void loadCatalog().then(() => {
+      if (!get(catalogError)) void startListening();
+    });
     const mq = window.matchMedia('(prefers-color-scheme: light)');
     const apply = () => {
       systemLight = mq.matches;

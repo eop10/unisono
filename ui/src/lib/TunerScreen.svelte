@@ -1,5 +1,8 @@
 <script lang="ts">
   //! Экран «Тюнер» (6.3): один экран — одно число; статус без дубля центов.
+  import { onDestroy, onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import CentsGauge from './CentsGauge.svelte';
   import LevelMeter from './LevelMeter.svelte';
   import StringChips from './StringChips.svelte';
@@ -8,8 +11,8 @@
   import { noteLetter, noteOctave } from '../lib/notes';
   import { instrumentName, tuningName } from '../lib/types';
   import { currentInstrument, currentTuning, settings, showStrings } from '../stores/settings';
-  import { selectString, tuner } from '../stores/tuner';
-  import { openOverlay } from '../stores/overlay';
+  import { listening, selectString, startListening, toggleListening, tuner } from '../stores/tuner';
+  import { overlay, openOverlay } from '../stores/overlay';
 
   const s = $derived($settings);
   const lang = $derived(s.language);
@@ -48,6 +51,24 @@
                 ? 'above'
                 : 'even',
   );
+
+  /** 6.7: Space — старт/стоп; не перехватываем ввод в полях и листах. */
+  function onKeyDown(e: KeyboardEvent): void {
+    if (e.code !== 'Space' || e.repeat) return;
+    const target = e.target as HTMLElement | null;
+    if (target && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(target.tagName)) return;
+    if (get(overlay) !== null) return;
+    e.preventDefault();
+    void toggleListening();
+  }
+
+  onMount(() => window.addEventListener('keydown', onKeyDown));
+  onDestroy(() => window.removeEventListener('keydown', onKeyDown));
+
+  /** macOS: системные настройки доступа к микрофону (7.2). */
+  function openMicSettings(): void {
+    void openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+  }
 </script>
 
 <div class="tuner-col">
@@ -73,9 +94,9 @@
       <h2>{st.kind === 'error' ? t(lang, 'error_title') : t(lang, 'perm_title')}</h2>
       <p>{st.kind === 'error' ? t(lang, 'error_text') : t(lang, 'perm_text')}</p>
       {#if st.kind === 'error'}
-        <button class="btn primary" onclick={() => openOverlay('settings')}>{t(lang, 'retry')}</button>
+        <button class="btn primary" onclick={() => void startListening()}>{t(lang, 'retry')}</button>
       {:else}
-        <button class="btn primary" onclick={() => openOverlay('settings')}>{t(lang, 'perm_settings')}</button>
+        <button class="btn primary" onclick={openMicSettings}>{t(lang, 'perm_settings')}</button>
       {/if}
     </div>
   {:else}
@@ -127,7 +148,15 @@
     {/if}
 
     <div class="bottom">
-      <LevelMeter db={st.kind === 'silent' ? -55 : st.db} {lang} />
+      <button
+        class="listen"
+        class:on={$listening}
+        aria-pressed={$listening}
+        aria-label={t(lang, 'aria_listen')}
+        onclick={() => void toggleListening()}
+      >{$listening ? t(lang, 'stop') : t(lang, 'listen')}</button>
+      <!-- Движок шлёт уровень даже в «Слушаю…» — индикатор живой (ФТ-16). -->
+      <LevelMeter db={st.db} {lang} />
       <div class="status" class:idle={st.kind === 'silent' || st.kind === 'uncertain'} class:tune={inTune}>
         <i class="dot"></i><span>{t(lang, statusKey)}</span>
       </div>

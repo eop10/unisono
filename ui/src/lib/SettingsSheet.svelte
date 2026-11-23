@@ -4,8 +4,8 @@
   import { fmtHz } from '../lib/format';
   import { t } from '../lib/i18n';
   import { instrumentName, tuningName } from '../lib/types';
-  import type { Language, Notation, Sensitivity, Theme, Tolerance } from '../lib/types';
-  import { currentInstrument, currentTuning, resetSettings, settings } from '../stores/settings';
+  import type { Language, Notation, Settings, Theme, Tolerance } from '../lib/types';
+  import { currentInstrument, currentTuning, resetSettings, settings, updateSetting } from '../stores/settings';
   import { closeOverlay, openOverlay } from '../stores/overlay';
 
   const s = $derived($settings);
@@ -14,7 +14,8 @@
   const tun = $derived($currentTuning);
 
   function set<K extends keyof typeof s>(key: K, value: (typeof s)[K]) {
-    settings.update((x) => ({ ...x, [key]: value }));
+    // updateSetting синхронизирует движок там, где настройка влияет на DSP.
+    updateSetting(key, value);
   }
 </script>
 
@@ -72,7 +73,7 @@
     <span class="lbl">{t(lang, 'sensitivity')}</span>
     <span class="seg">
       {#each ['low', 'normal', 'high'] as se}
-        <button class:on={s.sensitivity === se} aria-pressed={s.sensitivity === se} onclick={() => set('sensitivity', se as Sensitivity)}>{t(lang, `sens_${se}` as 'sens_low')}</button>
+        <button class:on={s.sensitivity === se} aria-pressed={s.sensitivity === se} onclick={() => set('sensitivity', se as Settings['sensitivity'])}>{t(lang, `sens_${se}` as 'sens_low')}</button>
       {/each}
     </span>
   </div>

@@ -9,6 +9,7 @@ rust-version.workspace = true
 rtrb = "0.3"
 thiserror = "2"
 tracing = "0.1"
+serde = { version = "1", features = ["derive"] }
 tuner-core = { path = "../tuner-core" }
 
 # cpal не собирается под Android; там будет oboe (этап 5, 7.1.2).

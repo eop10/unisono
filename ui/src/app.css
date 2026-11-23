@@ -342,6 +342,25 @@ select {
   justify-content: space-between;
   padding: 14px 24px 20px;
 }
+/* Старт/стоп прослушивания (6.7: Space — то же самое). */
+.listen {
+  font: 500 9.5px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 12px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.listen:hover {
+  border-color: var(--line2);
+  color: var(--text);
+}
+.listen.on {
+  color: var(--brass);
+  border-color: var(--brass);
+}
 .level {
   display: flex;
   gap: 3px;
