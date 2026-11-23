@@ -68,7 +68,7 @@ export interface Settings {
   lowRange: boolean;
   haptics: boolean;
   sound: boolean;
-  /** UI не показывает, но сохраняет (5.3); в файле, не в DTO — нет, ходит через DTO. */
+  /** UI не показывает; сохраняется в settings.json (5.3). */
   onboardingDone: boolean;
 }
 

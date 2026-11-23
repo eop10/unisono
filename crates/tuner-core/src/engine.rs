@@ -3,7 +3,7 @@
 //! Оркестрация кадра: детектор → сглаживание → выбор струны → «в строе».
 //! Не знает про аудио-колбэки, Tauri и UI: на входе кадр `f32`, на выходе
 //! [`TunerState`] для IPC. Состояния `Error`/`NoPermission` — это ошибки
-//! аудио-слоя, не движка: их подставляет bridge из `AudioError`.
+//! аудио-слоя, не движка: их подставляют bridge и watchdog (`tuner-audio`) из `AudioError`.
 
 use crate::dsp::{level_db, DetectorConfig, Estimate, PitchDetector, SmoothingFilter, GATE_DB};
 use crate::music::{note, Tuning};
