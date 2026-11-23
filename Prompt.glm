@@ -1,105 +1,329 @@
-# Prompt for GLM 5.3: stage 3 fixes + stage 4A (macOS audio)
+# Prompt для GLM 5.3: правки после ревью 4A + этап 4B (storage, меню, DMG)
 
-Ты — разработчик проекта **Unisono**. Репозиторий: https://github.com/eop10/unisono
-Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`.
+Репозиторий: https://github.com/eop10/unisono
+Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
 
-Сейчас в `main`: этапы 0–3. Работают каталог, UI на Svelte, DSP на синтетике.
-Аудио ещё нет: `ui/src/stores/tuner.ts` — мок, демо-панель в DEV.
+Состояние: локальный `main` содержит этапы 0–4A и **опережает `origin/main` на 4 коммита**
+(последний — `10dd0e8`, stage-4A part 3). Не делай reset/rebase, не переписывай историю.
+CI на эти 4 коммита ещё не запускался: при push job `android` **упадёт** (см. 0.1),
+поэтому сначала часть 0, потом остальное, push — только в самом конце, когда всё зелёное.
 
 Перед работой прочитай:
-1. `HANDOFF.md`
-2. `docs/source/03_architecture.md` (3.4–3.7)
-3. `docs/source/04_dsp.md` (4.3–4.4)
-4. `docs/source/06_ui.md` (6.3–6.9)
-5. `docs/source/07_platform.md` (7.2, macOS)
-6. `docs/source/09_plan.md` (этап 4)
-7. `design/prototype.html` — эталон интерфейса
 
-## Часть 0. Правки этапа 3 (до аудио)
+1. `HANDOFF.md` (правила, версии, ключи).
+2. `docs/source/03_architecture.md` §3.4–3.7.
+3. `docs/source/04_dsp.md` §4.2.1, 4.3.5–4.3.7, 4.4.
+4. `docs/source/05_data.md` §5.1–5.8 — контракт хранения (snake_case, `schema_version`, атомарная запись).
+5. `docs/source/06_ui.md` §6.5–6.9 — меню, горячие клавиши, айдентика.
+6. `docs/source/07_platform.md` §7.2.1–7.2.3 — cpal, TCC, DMG без нотаризации.
+7. `docs/source/08_build_test.md` §8.6 — релизный чек-лист macOS.
+8. `design/prototype.html` — эталон интерфейса.
 
-1. **Шестерёнка.** В `ui/src/lib/TunerScreen.svelte` сейчас иконка «солнце» (круг + лучи).
-   Замени на нормальную шестерёнку (cog) из `design/prototype.html` (Heroicons cog-6-tooth):
-   8 зубцов + отверстие. Это уже было замечанием пользователя.
-2. **`Uncertain`.** В `TunerScreen.svelte` при `st.kind === 'uncertain'` центы сейчас видны
-   (класс `dim`). По 6.3.2 цифры должны быть скрыты: показывай `—`, подпись `центов` не показывай,
-   шкалу оставь приглушённой с иглой в последней позиции.
-3. **`TuningEditor.svelte`:**
-   - новый строй по умолчанию должен брать струны текущего строя инструмента
-     (для гитары — 6 струн), а не `[64, 69, 74]` для всех;
-   - `maxlength` имени — 24, не 32 (5.7);
-   - в `<option>` нота должна учитывать `settings.notation` (сейчас всегда `'latin'`);
-   - при вводе имени/струн сбрасывай старую ошибку.
-4. Тесты: добавь `vitest` на скрытие центов в `Uncertain`, дефолт редактора и maxlength/нотацию.
-5. `npm --prefix ui run check`, `test`, `build` — зелёные.
+`docs/`, `brand/`, `design/` **не трогать**. Если найдёшь расхождение кода и документации —
+исправляй код под документацию; если документация противоречит сама себе — напиши в отчёте,
+не правь её.
 
-## Часть 1. TunerEngine (ядро)
+---
 
-Новый модуль `crates/tuner-core/src/engine.rs`:
+## Часть 0. Правки по ревью 4A (до нового функционала)
 
-- `TunerState` (Serialize, camelCase): `kind`, `f0: Option<f32>`, `cents: Option<f32>`,
-  `clarity: f32`, `db: f32`, `noteMidi: Option<u8>`, `targetHz: Option<f32>`,
-  `stringIndices: Vec<usize>`. `kind` — `"silent" | "uncertain" | "tracking" | "intune"`.
-- `EngineConfig`: `tuning`, `a4`, `tolerance_cents`, `sensitivity`, `manual_string` (Option).
-- `StringMatcher`:
-  - auto: ближайшая целевая струна по |cents|; гистерезис: не переключать, если новая струна
-    выигрывает < 10 центов; выходить из текущей при > 60 центов;
-  - manual: выбранная струна; при чужой ноте `stringIndices` пустой, kind = uncertain;
-  - chromatic: ближайшая нота равномерной темпеции, `stringIndices` пустой;
-  - унисоны: балалайка E4+E4 отдаёт оба индекса.
-- `TunerEngine`:
-  - при смене строя/A4 пересоздаёт `DetectorConfig` (окно из registry, f_min из фактической цели);
-  - `process_frame(&mut self, raw: &mut [f32], fs: u32) -> TunerState`;
-  - `Estimate::Silent` → `kind=silent`; `Uncertain` → `uncertain`; `Pitch` → tracking/intune;
-  - `intune` при |cents| ≤ tolerance 250 мс подряд; сброс при выходе;
-  - сглаживание `SmoothingFilter`, сброс при смене строя;
-  - `cents = 1200·log2(f0 / target)`; `noteMidi` из target/ближайшей ноты.
-- Тесты: E2 440 → −7 центов; intune через 250 мс и выход; смена струны с гистерезисом;
-  балалайка E4+E4; хроматика; A4=442 пересчитывает target.
+### 0.1. P0: сборка под Android сломана
 
-## Часть 2. AudioSource на macOS
+`src-tauri/src/bridge.rs` импортирует `tuner_audio::PlatformSource`, а в
+`crates/tuner-audio/src/lib.rs` он объявлен под `#[cfg(not(target_os = "android"))]`.
+Воспроизведение (NDK и target уже установлены на этой машине):
 
-`crates/tuner-audio`:
+```bash
+export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
+export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
+export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
+cargo check -p app --target aarch64-linux-android
+# error[E0432]: unresolved import `tuner_audio::PlatformSource`
+```
 
-- `trait AudioSource`: `sample_rate()`, `start(sink: rtrb::Producer<f32>) -> Result<(), AudioError>`,
-  `stop()`.
-- `CpalSource`: `cpal` CoreAudio, `f32`, моно, 48 кГц (fallback — фактическая конфигурация),
-  буфер 512; колбэк без аллокаций и блокировок; ошибки устройства — в `AudioError`.
-- `rtrb` SPSC; capacity ~1 с; переполнение считается, не паникует.
-- Поток анализа: `std::thread`, читает ring buffer, окно 4096/8192/16384, вызывает `TunerEngine`.
-- `tuner-audio` не знает про Tauri и UI.
+Сделать: в `tuner-audio` добавить Android-заглушку `PlatformSource`, реализующую
+`AudioSource`:
 
-## Часть 3. Tauri bridge и macOS
+- `new()`, `sample_rate() -> 48_000` (до старта — 0), `stop()` — no-op;
+- `start(..) -> Err(AudioError::Device("захват звука на Android — этап 5".into()))`.
 
-- `src-tauri`:
-  - `AppState`: текущий `TunerEngine`/config, флаг прослушивания, поток анализа.
-  - команды: `start_listening(channel: tauri::ipc::Channel<TunerState>)`, `stop_listening`,
-    `set_reference(hz)`, `select_instrument(id)`, `select_tuning(id)`, `get_catalog` (есть).
-  - `Channel<TunerState>` 30–60 Гц; не отправлять сырое аудио.
-  - `stop_listening` останавливает поток и `cpal`; при закрытии окна — тоже.
-  - `src-tauri/Info.plist` с `NSMicrophoneUsageDescription` (текст из 7.2.2).
-- UI:
-  - замени мок `stores/tuner.ts` на реальный поток через `Channel`;
-  - состояния `error`/`nopermission` из аудио-ошибок;
-  - демо-панель оставь только в DEV/`?demo`, в production не рендерить;
-  - не добавляй аудио-логику в Svelte.
+Комментарий: настоящий `oboe` — этап 5, заглушка нужна, чтобы APK собирался и CI был зелёным.
+UI на Android покажет экран ошибки с «Повторить» — это ожидаемо.
+Проверка: команда выше проходит; `cargo clippy --workspace --all-targets -- -D warnings` тоже.
 
-## Порядок и остановка
+### 0.2. P0: UI не распознаёт отказ в доступе к микрофону
 
-Делай части по порядку, коммить после каждой. Если контекст/лимит заканчивается —
-остановись после завершённой части, оставь рабочее состояние и отчёт;
-не оставляй недописанный код.
+Фактический JSON ошибки (проверено `serde_json`):
 
-## Часть 4. Что НЕ делать в этом этапе
+```text
+AudioError::PermissionDenied → "permissionDenied"
+AudioError::NoInputDevice    → "noInputDevice"
+AudioError::Device("busy")   → {"device":"busy"}
+```
 
-- `tuner-storage` (settings/presets), DMG, notarization, Android, Windows/Linux — следующий этап 4B.
-- Не трогай `brand/`, `design/`, `docs/`.
-- Не добавляй `unsafe` в `tuner-core`.
+А в `ui/src/stores/tuner.ts` стоит `err === 'PermissionDenied'` — условие никогда не истинно,
+экран `NoPermission` недостижим. Тест в `ui/tests/stores.test.ts` мокает несуществующую форму,
+поэтому баг не ловится.
 
-## Definition of Done
+Сделать:
 
-- `cargo fmt --check`, `clippy -D warnings`, `cargo test` — зелёные.
-- `npm --prefix ui run check`, `test`, `build` — зелёные.
-- На macOS `npm run tauri dev`: приложение слушает микрофон, показывает ноту/центы,
-  start/stop работают, разрешение запрашивается, в фоне захват останавливается.
-- CI зелёный.
-- В конце отчёт: что сделано, как проверено, что осталось для 4B.
+1. В `crates/tuner-audio/src/lib.rs` сериализовать ошибку стабильным тегированным объектом:
+   `#[serde(tag = "kind", content = "message", rename_all = "camelCase")]` →
+   `{"kind":"permissionDenied"}`, `{"kind":"device","message":"busy"}`.
+2. Добавить unit-тест в `tuner-audio`: `serde_json::to_value(AudioError::PermissionDenied)`
+   ровно `json!({"kind": "permissionDenied"})`.
+3. В `ui/src/stores/tuner.ts` определять вид по `err?.kind`; строку тоже принимать
+   (на случай старого формата). `permissionDenied` → `nopermission`, остальное → `error`.
+4. Тесты UI переписать на реальные формы: `{ kind: 'permissionDenied' }`, `{ kind: 'device', message: 'busy' }`.
+
+### 0.3. P1: «Чувствительность» противоречит спецификации данных
+
+`docs/source/05_data.md` §5.3: `sensitivity` = Low / Normal / High →
+**порог `clarity` 0,75 / 0,60 / 0,45**. В коде `Sensitivity::gate_db()` двигает RMS-гейт
+(−35/−45/−50 дБ), а `clarity_min` всегда 0,60. Порог тишины по §4.2.1 фиксирован: вход −50,
+выход −45.
+
+Сделать:
+
+- `Sensitivity::clarity_min()` → 0.75 / 0.60 / 0.45;
+- `detector_config()` ставит `cfg.clarity_min`, `cfg.gate_db = GATE_DB` всегда;
+- убрать `Sensitivity::gate_db` (и упоминание «сдвигает порог тишины» из doc-комментария);
+- тест `sensitivity_shifts_gate` заменить на `sensitivity_shifts_clarity`
+  (проверка `detector_config(...).clarity_min` для трёх значений) + один тест движка:
+  кадр с `clarity` между 0,45 и 0,60 даёт `Tracking` при `High` и `Uncertain` при `Normal`.
+  Если синтезировать такой кадр сложно — проверяй конфиг детектора и оставь комментарий.
+
+### 0.4. P1: анализатор подмешивает отфильтрованное перекрытие
+
+`PitchDetector::process_frame` по §4.3.7 фильтрует кадр **in-place** (DC + ФВЧ).
+`spawn_analyzer` передаёт `&mut buffer[..window]`, а затем `copy_within(hop.., 0)` —
+в историю попадают уже отфильтрованные отсчёты, и в следующем кадре они фильтруются снова
+(до 4 раз для окна 4096 при hop 1024). На стационарном синусе это не видно, на затухающей
+струне и переходных процессах это неверная фильтрация и лишние скачки на границах hop.
+
+Сделать: держать в анализаторе отдельный `scratch: Vec<f32>` (capacity 16 384), копировать
+туда окно (`scratch.clear(); scratch.extend_from_slice(&buffer[..window]);`), отдавать
+детектору `&mut scratch[..]`. История в `buffer` остаётся сырой. Комментарий обязателен.
+Публичный контракт `PitchDetector` не менять (документация описывает in-place).
+
+Заодно в `spawn_analyzer` не держать мьютекс движка во время `on_state`:
+снять состояние и окно под замком, `drop(guard)`, потом отправить в канал.
+
+### 0.5. P2: мелочи UI
+
+- `startListening()` сбрасывает `tuner` в `SILENT` до `invoke`, чтобы после «Повторить»
+  не мигали старые цифры.
+- `stopListening()` не должен падать, если `invoke` вернул ошибку (try/finally).
+
+После части 0 — коммит `stage-4A review: android stub, tagged audio errors, sensitivity,
+raw analyzer history`. Все проверки из «Definition of Done» (в конце) должны быть зелёными.
+
+---
+
+## Часть 1. `tuner-storage`: настройки и пресеты
+
+Реализовать крейт по §5.1–5.8. Сейчас `crates/tuner-storage/src/lib.rs` — только doc-comment.
+
+API (имена можно уточнить, поведение — нет):
+
+```rust
+pub const SCHEMA_VERSION: u32 = 2;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Settings { /* поля §5.3, snake_case, schema_version */ }
+
+impl Settings { pub fn sanitize(self) -> Self; }   // вне диапазона → дефолт, без паники
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PresetRecord { pub id: String, pub instrument_id: String,
+                          pub name: String, pub strings: Vec<u8> }
+
+pub struct Store { /* каталог */ }
+impl Store {
+    pub fn open(dir: &Path) -> Result<Self, StoreError>;
+    pub fn load_settings(&self) -> Settings;              // нет файла/битый → default/карантин
+    pub fn save_settings(&self, s: &Settings) -> Result<(), StoreError>;
+    pub fn load_presets(&self) -> Vec<PresetRecord>;      // битый → пусто + переименование
+    pub fn save_presets(&self, p: &[PresetRecord]) -> Result<(), StoreError>;
+}
+```
+
+Требования:
+
+- `settings.json` и `presets.json` — **snake_case**, `schema_version` в обоих (§5.3, 5.4).
+- Атомарная запись: `*.tmp` → `sync_all()` → `rename`; ошибки — `StoreError`, не паника.
+- Битый JSON: переименовать в `<имя>.corrupt-<unix_ts>.json`, вернуть дефолт/пусто, причину — в `tracing`.
+- Миграция §5.8: версия 1 → 2 добавляет `instrument_id="guitar"`, `tuning_id="standard_e"`,
+  `language=Ru`, `schema_version=2`; версия больше текущей — читать известные поля, файл не перезаписывать.
+- `sanitize`: `reference_hz` clamp 400–480 с шагом 0,1; `tolerance_cents` только 2/3/5;
+  неизвестный `instrument_id` → `guitar`; `tuning_id` не из выбранного инструмента → первый встроенный;
+  `strings` вне 21–96 или пустые — пресет пропускается при загрузке.
+- Лимит 20 пользовательских строёв на инструмент проверять и в Rust при сохранении.
+- Тесты (dev-dependency `tempfile`): round-trip; атомарность (после записи нет `.tmp`);
+  битый файл → карантин + дефолт; миграция 1→2; sanitize каждого поля; лимит пресетов;
+  пресет с неизвестным инструментом не роняет загрузку.
+
+Команды Tauri (`src-tauri/src/commands.rs`), DTO в camelCase для UI:
+
+- `get_settings() -> SettingsDto`
+- `save_settings(settings: SettingsDto)`
+- `get_presets() -> Vec<PresetDto>`
+- `save_preset(preset: PresetDto)`
+- `delete_preset(id: String)`
+
+`schema_version` и `onboarding_done` живут в файле; UI их не показывает, но сохраняет.
+Каталог: `app.path().app_config_dir()` (создать при старте), экземпляр `Store` — в `AppState`.
+Ошибки хранения логировать, приложение не падать (настройки — не критичный путь).
+
+---
+
+## Часть 2. UI: настройки и пресеты переживают перезапуск
+
+1. `ui/src/stores/settings.ts`: `loadSettings()` — `get_settings` → в стор; `applySettingsToEngine()` —
+   отправить в движок строй/инструмент, A4, допуск, чувствительность, `lowRange`,
+   `manual_string = null`. Для `instrumentId = "chromatic"` — `select_instrument("chromatic")`,
+   иначе — объект строя из `tuningsFor` (после `loadPresets`, чтобы работал пользовательский строй).
+   Сохранение — debounce 300 мс после изменения (кроме первого заполнения из файла).
+2. `ui/src/stores/customs.ts`: `loadPresets()` из `get_presets`; `savePreset` → `save_preset`;
+   `deletePreset(id)` → `delete_preset`. Стор остаётся единственным источником для каталога.
+3. `ui/src/App.svelte`: порядок старта — `loadCatalog` → `loadSettings` → `loadPresets` →
+   `applySettingsToEngine` → `startListening`. При ошибке каталога не слушать (как сейчас).
+4. `ui/src/lib/TuningEditor.svelte`: кнопка «Удалить» для `built_in: false` с подтверждением
+   (встроенные удалять нельзя), i18n RU/EN. После удаления активного строя — выбрать первый
+   встроенный, движку отправить его.
+5. `lowRange` наконец подключить: `set_low_range(bool)` → `EngineConfig.low_range`;
+   `detector_config` для хроматики: `for_chromatic(config.low_range, fs)`. Тест: окно 4096 → 16384.
+6. Тесты vitest: загрузка настроек заполняет стор; изменение A4/допуска вызывает IPC;
+   пресеты приходят из IPC и попадают в `tuningsFor`; удаление убирает пресет.
+7. Проверка вручную на macOS: A4=442, бас-5, тема light → перезапуск → всё восстановилось,
+   движок сразу считает от 442 (не 440).
+
+---
+
+## Часть 3. Аудио: живучесть и разрешение
+
+1. **Watchdog** (§7.2.1): пока слушаем и за 1 с не пришло ни одного кадра — переоткрыть поток
+   (не чаще раза в 2 с, максимум 3 попытки подряд), состояние движка сбросить в `Silent`.
+   Если переоткрыть не удалось — отправить в канал состояние ошибки (добавь в `TunerState`
+   вариант `kind = "error"`/`"noPermission"` **только если** это нужно для UI; альтернатива —
+   отдельное событие `audio://error`; выбери одно и опиши в отчёте).
+2. **Ошибка потока** (`err_cb`): не только `tracing`, а сигнал в bridge → watchdog/reopen.
+   Устройство по умолчанию сменилось — переоткрыть (сравнение `default_input_device().name()`
+   раз в 2 с или обработка ошибки потока).
+3. **Буфер**: если `BufferSize::Fixed(512)` не поддерживается — повторить с `BufferSize::Default`.
+4. **TCC (важно для приёмки)**. Проверь на собранном `.app`: «Системные настройки →
+   Конфиденциальность → Микрофон» → выключить Unisono → запустить. Если UI показывает
+   «Слушаю…» вместо экрана `NoPermission` (macOS отдаёт тишину вместо ошибки), реализуй
+   проверку через AVFoundation в `tuner-audio` (только macOS, без Tauri):
+   `AVCaptureDevice.authorizationStatus(for: .audio)`; при `notDetermined` —
+   `requestAccess` (в потоке-владельце устройства, не в UI); `denied`/`restricted` →
+   `AudioError::PermissionDenied`. Предпочтительны safe-обёртки `objc2-av-foundation`
+   + `block2` (без `unsafe`; `#![forbid(unsafe_code)]` есть только в `tuner-core`).
+   Не распознавай отказ по тексту ошибки — только по статусу.
+   В отчёте: что именно показал ручной тест на Mac (разрешено / отказано / отозвано).
+5. Тесты: watchdog на «нет данных» (без железа — через фейковый источник/канал), `stop` идемпотентен,
+   повторный `start` не течёт; маппинг статусов TCC — unit-тест на macOS.
+
+---
+
+## Часть 4. Меню и горячие клавиши (§6.7)
+
+1. Нативное меню macOS через Tauri:
+   - «О программе Unisono»: версия, Apache-2.0, `unsigned build`, ссылка на `PRIVACY.md`;
+   - «Настройки…» ⌘, → событие в UI → открыть лист настроек;
+   - Hide / Hide Others / Show All, «Выход» ⌘Q.
+   На не-macOS — минимальное меню (Настройки, Выход), без macOS-специфики.
+2. Горячие клавиши в `TunerScreen` (игнорировать в полях ввода и при открытом листе):
+   - `1…8` (по `e.code`, чтобы работало в RU-раскладке) — ручной выбор струны, повторное
+     нажатие — автоопределение; в хроматике игнорировать;
+   - `↑`/`↓` — A4 ±0,1 с clamp 400–480 (повтор разрешён);
+   - `Space` — старт/стоп (уже есть, не сломать).
+3. Тесты: хоткеи струн/ A4 меняют стор и вызывают IPC; в input/select не перехватываются.
+
+---
+
+## Часть 5. Сборка macOS: Universal DMG (§7.2.2–7.2.3, §8.6)
+
+Проверено на текущем коде: `Info.plist` мержится, но `LSMinimumSystemVersion = 10.13`,
+а подпись — `adhoc,linker-signed`, `Info.plist=not bound`.
+
+1. `src-tauri/tauri.conf.json`:
+   ```json
+   "bundle": {
+     "targets": ["app", "dmg"],
+     "macOS": {
+       "minimumSystemVersion": "12.0",
+       "signingIdentity": "-",
+       "category": "Music",
+       "copyright": "© 2026 Егор Присяжный. Apache-2.0"
+     }
+   }
+   ```
+   Иконки не трогать (этап 8).
+2. `scripts/build-macos.sh` (исполняемый): `npm ci`, `npm --prefix ui ci`,
+   `rustup target add aarch64-apple-darwin x86_64-apple-darwin`,
+   `npm run tauri build -- --target universal-apple-darwin`,
+   проверки:
+   ```bash
+   plutil -p …/Unisono.app/Contents/Info.plist | grep NSMicrophoneUsageDescription
+   plutil -p …/Info.plist | grep LSMinimumSystemVersion   # 12.0
+   codesign -dv …/Unisono.app 2>&1 | grep -q adhoc
+   hdiutil verify …/Unisono_*_universal.dmg
+   shasum -a 256 …/*.dmg | tee dist/SHA256SUMS
+   ```
+   Скрипт должен падать (`set -euo pipefail`), если любая проверка не прошла.
+3. CI `desktop`: установить оба target, собрать universal, артефакт
+   `target/universal-apple-darwin/release/bundle/dmg/*.dmg`. Не делать notarization.
+4. README: блок «Первый запуск» уже есть — сверить с фактическим именем DMG и поведением
+   Gatekeeper; при расхождении поправить README (это единственный документ, который можно править).
+5. Ручная приёмка на Mac (обязательна, отметь в отчёте): открыть DMG, перетащить,
+   «Всё равно открыть», запуск, настройка гитары E2 и скрипки A4, A4=442, хроматика,
+   отказ в доступе → экран `NoPermission`, повторный запуск → настройки на месте.
+
+---
+
+## Часть 6. Порядок, остановка, Definition of Done
+
+Порядок: 0 → 1 → 2 → 3 → 4 → 5. Коммит после каждой части (сообщение `stage-4B: …`).
+Если контекст/лимит заканчивается — остановись на завершённой части, оставь рабочее
+состояние и отчёт; недописанный код не коммить.
+
+Проверки перед каждым коммитом и в конце:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+npm --prefix ui run check
+npm --prefix ui run test
+npm --prefix ui run build
+# Android (обязательно, см. 0.1):
+cargo check -p app --target aarch64-linux-android
+# macOS-бандл (часть 5):
+npm run tauri build -- --debug --bundles app
+plutil -p target/debug/bundle/macos/Unisono.app/Contents/Info.plist | grep NSMicrophoneUsageDescription
+```
+
+Готово, когда:
+
+- все команды выше зелёные, CI зелёный (включая `android` и `desktop`);
+- настройки и пресеты переживают перезапуск, движок стартует с сохранёнными A4/строем;
+- `lowRange` включает окно 16384 в хроматике (тест);
+- меню и хоткеи работают по §6.7;
+- Universal DMG собирается скриптом, `.app` подписан ad-hoc (`codesign -dv` → `adhoc`),
+  `NSMicrophoneUsageDescription` на месте, `LSMinimumSystemVersion = 12.0`;
+- на реальном Mac проверены микрофон, отказ в доступе и первый запуск.
+
+В конце: пуш в `origin/main`, отчёт — что сделано, чем проверено (команды и их результат),
+что осталось для этапа 5 (Android/oboe), какие места требуют ручной проверки владельцем.
+
+## Что НЕ делать
+
+- Не трогать `docs/`, `brand/`, `design/`.
+- Не делать `oboe`, Windows/Linux, notarization, релиз 0.1.0, иконки (этапы 5–10).
+- Не запрашивать и не коммитить keystore/пароли.
+- Не добавлять `unsafe` в `tuner-core`; `DSP`-формулы и пороги не менять, кроме 0.3.
+- Не менять публичный контракт `PitchDetector` (in-place, §4.3.7).
