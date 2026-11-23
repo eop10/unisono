@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# В headless/скриптовом окружении Finder AppleScript виснет (-1712); CI=true включает --skip-jenkins в bundle_dmg.sh
+export CI="${CI:-true}"
+
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
