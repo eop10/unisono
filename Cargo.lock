@@ -4745,6 +4745,7 @@ dependencies = [
  "cpal",
  "rtrb",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tracing",
  "tuner-core",

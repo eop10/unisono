@@ -26,15 +26,27 @@ const SILENT: TunerState = {
 export const tuner = writable<TunerState>({ ...SILENT });
 export const listening = writable(false);
 
-/** Аудио-ошибка → экран (4.4): отказ в доступе или сбой устройства. */
+/** Аудио-ошибка → экран (4.4): отказ в доступе или сбой устройства.
+ *  Ошибка приходит тегированным объектом `{"kind":"permissionDenied"}`
+ *  (serde: tag+content); строку тоже принимаем — на случай старого формата. */
+function isPermissionDenied(err: unknown): boolean {
+  if (typeof err === 'string') {
+    return err === 'PermissionDenied' || err === 'permissionDenied';
+  }
+  const kind = (err as { kind?: unknown } | null | undefined)?.kind;
+  return kind === 'permissionDenied' || kind === 'PermissionDenied';
+}
+
 function audioErrorState(err: unknown): TunerState {
-  const kind: TunerKind = err === 'PermissionDenied' ? 'nopermission' : 'error';
+  const kind: TunerKind = isPermissionDenied(err) ? 'nopermission' : 'error';
   return { ...SILENT, kind };
 }
 
 export async function startListening(): Promise<void> {
   const channel = new Channel<TunerState>();
   channel.onmessage = (state) => tuner.set(state);
+  // Сразу в «Слушаю…»: после «Повторить» не мигают старые цифры (ревью 4A).
+  tuner.set({ ...SILENT });
   try {
     await ipcStart(channel);
     listening.set(true);
@@ -45,9 +57,14 @@ export async function startListening(): Promise<void> {
 }
 
 export async function stopListening(): Promise<void> {
-  await ipcStop();
-  listening.set(false);
-  tuner.set({ ...SILENT });
+  try {
+    await ipcStop();
+  } catch {
+    // Команда не прошла (IPC/бэкенд) — UI-флоу не роняем, состояние сбрасываем.
+  } finally {
+    listening.set(false);
+    tuner.set({ ...SILENT });
+  }
 }
 
 export async function toggleListening(): Promise<void> {

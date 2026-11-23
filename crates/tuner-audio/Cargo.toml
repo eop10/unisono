@@ -15,3 +15,6 @@ tuner-core = { path = "../tuner-core" }
 # cpal не собирается под Android; там будет oboe (этап 5, 7.1.2).
 [target.'cfg(not(target_os = "android"))'.dependencies]
 cpal = "0.15"
+
+[dev-dependencies]
+serde_json = "1"

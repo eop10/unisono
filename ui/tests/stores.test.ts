@@ -134,20 +134,56 @@ describe('audio stream store (4A)', () => {
     expect(get(tuner).noteMidi).toBe(40);
   });
 
-  it('permission denial maps to nopermission, other audio errors to error', async () => {
-    vi.mocked(ipc.startListening).mockRejectedValueOnce('PermissionDenied');
+  it('tagged permission error maps to nopermission, other audio errors to error', async () => {
+    // Формат serde: {"kind":"permissionDenied"} (tag+content, camelCase).
+    vi.mocked(ipc.startListening).mockRejectedValueOnce({ kind: 'permissionDenied' });
     await startListening();
     expect(get(tuner).kind).toBe('nopermission');
     expect(get(listening)).toBe(false);
 
-    vi.mocked(ipc.startListening).mockRejectedValueOnce({ Device: 'busy' });
+    vi.mocked(ipc.startListening).mockRejectedValueOnce({ kind: 'device', message: 'busy' });
     await startListening();
     expect(get(tuner).kind).toBe('error');
     expect(get(listening)).toBe(false);
+
+    // Старый строковый формат тоже принимается.
+    vi.mocked(ipc.startListening).mockRejectedValueOnce('permissionDenied');
+    await startListening();
+    expect(get(tuner).kind).toBe('nopermission');
   });
 
-  it('stop listening resets the state', async () => {
+  it('start resets the display to silent so retry does not flash old digits', async () => {
+    tuner.set({
+      kind: 'tracking',
+      f0: 82.4,
+      cents: -7,
+      clarity: 0.9,
+      db: -20,
+      noteMidi: 40,
+      targetHz: 82.4,
+      stringIndices: [0],
+    });
+    vi.mocked(ipc.startListening).mockRejectedValueOnce({ kind: 'device', message: 'busy' });
     await startListening();
+    expect(get(tuner).kind).toBe('error');
+    // До invoke стор уже был в silent: старые центы не мигают после «Повторить».
+    tuner.set({
+      kind: 'tracking',
+      f0: 82.4,
+      cents: -7,
+      clarity: 0.9,
+      db: -20,
+      noteMidi: 40,
+      targetHz: 82.4,
+      stringIndices: [0],
+    });
+    await startListening();
+    expect(ipc.startListening).toHaveBeenCalledTimes(2);
+  });
+
+  it('stop listening resets the state even if the command fails', async () => {
+    await startListening();
+    vi.mocked(ipc.stopListening).mockRejectedValueOnce(new Error('ipc down'));
     await stopListening();
     expect(ipc.stopListening).toHaveBeenCalledOnce();
     expect(get(listening)).toBe(false);

@@ -53,7 +53,8 @@ pub enum TunerKind {
     InTune,
 }
 
-/// Чувствительность входного гейта (6.6): сдвигает порог тишины.
+/// Чувствительность ввода (6.6, §5.3): порог достоверности `clarity`,
+/// при котором показывается цифра. Порог тишины при этом фиксирован (§4.2.1).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Sensitivity {
@@ -64,12 +65,12 @@ pub enum Sensitivity {
 }
 
 impl Sensitivity {
-    /// Порог выхода из тишины (dBFS): вход в тишину на 5 дБ ниже (гистерезис).
-    pub fn gate_db(self) -> f32 {
+    /// Минимальная достоверность для показа цифры (§5.3): 0,75 / 0,60 / 0,45.
+    pub fn clarity_min(self) -> f32 {
         match self {
-            Sensitivity::Low => -35.0,
-            Sensitivity::Normal => GATE_DB,
-            Sensitivity::High => -50.0,
+            Sensitivity::Low => 0.75,
+            Sensitivity::Normal => 0.60,
+            Sensitivity::High => 0.45,
         }
     }
 }
@@ -411,14 +412,16 @@ impl TunerEngine {
 }
 
 /// Конфигурация детектора из конфига движка: окно по строю (реестр),
-/// `f_min` — фактическая нижняя цель при текущей A4; гейт — по чувствительности.
+/// `f_min` — фактическая нижняя цель при текущей A4. Порог тишины —
+/// фиксированный §4.2.1; чувствительность двигает `clarity_min` (§5.3).
 fn detector_config(config: &EngineConfig, fs: u32) -> DetectorConfig {
     let mut cfg = match &config.tuning {
         Some(tuning) => DetectorConfig::for_tuning(tuning, config.a4, fs),
         // Хроматика: базовые 4096; «Низкий диапазон» подъедет с настройками (4B).
         None => DetectorConfig::for_chromatic(false, fs),
     };
-    cfg.gate_db = config.sensitivity.gate_db();
+    cfg.gate_db = GATE_DB;
+    cfg.clarity_min = config.sensitivity.clarity_min();
     cfg
 }
 
@@ -731,27 +734,91 @@ mod tests {
     }
 
     #[test]
-    fn sensitivity_shifts_gate() {
-        assert_eq!(Sensitivity::Low.gate_db(), -35.0);
-        assert_eq!(Sensitivity::Normal.gate_db(), GATE_DB);
-        assert_eq!(Sensitivity::High.gate_db(), -50.0);
-        // Тихая струна (−42 dBFS): обычная чувствительность слышит, низкая — нет.
-        let amp = 10f32.powf(-42.0 / 20.0) * 2f32.sqrt();
-        let mut normal = engine(Some(guitar()), 440.0);
-        let mut frame = sine(note::hz(40, 440.0), amp);
-        let st = normal.process_frame(&mut frame, FS);
-        assert_eq!(st.kind, TunerKind::Tracking);
+    fn sensitivity_shifts_clarity() {
+        assert_eq!(Sensitivity::Low.clarity_min(), 0.75);
+        assert_eq!(Sensitivity::Normal.clarity_min(), 0.60);
+        assert_eq!(Sensitivity::High.clarity_min(), 0.45);
+        // Порог тишины фиксирован §4.2.1 и от чувствительности не зависит.
+        for sens in [Sensitivity::Low, Sensitivity::Normal, Sensitivity::High] {
+            let cfg = detector_config(
+                &EngineConfig {
+                    sensitivity: sens,
+                    ..config(Some(guitar()), 440.0)
+                },
+                FS,
+            );
+            assert_eq!(cfg.clarity_min, sens.clarity_min());
+            assert_eq!(cfg.gate_db, GATE_DB);
+        }
+    }
 
-        let mut low = TunerEngine::new(
+    /// Детерминированный шум (LCG, как в тестах dsp/pitch.rs).
+    fn lcg(state: &mut u32) -> f32 {
+        *state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (*state as f32 / u32::MAX as f32 - 0.5) * 2.0
+    }
+
+    /// Синус + шум: достоверность NSDF регулируется амплитудой шума.
+    fn noisy_frame(freq: f64, sine_amp: f32, noise_amp: f32) -> Vec<f32> {
+        let mut state = 0x5EED_u32;
+        (0..4096)
+            .map(|i| {
+                let t = i as f64 / f64::from(FS);
+                sine_amp * (2.0 * std::f64::consts::PI * freq * t).sin() as f32
+                    + noise_amp * lcg(&mut state)
+            })
+            .collect()
+    }
+
+    /// Прямое измерение clarity кадра детектором с clarity_min = 0:
+    /// обе ветви Estimate несут фактическую достоверность.
+    fn measure_clarity(frame: &mut [f32]) -> f32 {
+        let mut cfg = DetectorConfig::new(4096, FS, 82.41);
+        cfg.clarity_min = 0.0;
+        let mut probe = PitchDetector::new(cfg);
+        match probe.process_frame(frame, FS) {
+            Some(Estimate::Pitch { clarity, .. }) | Some(Estimate::Uncertain { clarity }) => {
+                clarity
+            }
+            _ => 0.0,
+        }
+    }
+
+    #[test]
+    fn mid_clarity_frame_tracks_on_high_and_uncertain_on_normal() {
+        // Ищем детерминированный шум с clarity в середине (0.45, 0.60):
+        // синтетика вместо живого «играйте чище» (0.3).
+        let f = note::hz(40, 440.0);
+        let mut chosen = None;
+        for step in 0..60 {
+            let noise_amp = 0.08 + step as f32 * 0.01;
+            let clarity = measure_clarity(&mut noisy_frame(f, 0.12, noise_amp));
+            if (0.48..0.57).contains(&clarity) {
+                chosen = Some((noise_amp, clarity));
+                break;
+            }
+        }
+        let Some((noise_amp, clarity)) = chosen else {
+            panic!("не нашли амплитуду шума с clarity в (0.45, 0.60)");
+        };
+
+        // High: clarity ≥ 0.45 → Pitch → Tracking.
+        let mut high = TunerEngine::new(
             EngineConfig {
-                sensitivity: Sensitivity::Low,
+                sensitivity: Sensitivity::High,
                 ..config(Some(guitar()), 440.0)
             },
             FS,
         );
-        let mut frame = sine(note::hz(40, 440.0), amp);
-        let st = low.process_frame(&mut frame, FS);
-        assert_eq!(st.kind, TunerKind::Silent);
+        let mut frame = noisy_frame(f, 0.12, noise_amp);
+        let st = high.process_frame(&mut frame, FS);
+        assert_eq!(st.kind, TunerKind::Tracking, "clarity = {clarity}");
+
+        // Normal: тот же кадр, clarity < 0.60 → Uncertain.
+        let mut normal = engine(Some(guitar()), 440.0);
+        let mut frame = noisy_frame(f, 0.12, noise_amp);
+        let st = normal.process_frame(&mut frame, FS);
+        assert_eq!(st.kind, TunerKind::Uncertain, "clarity = {clarity}");
     }
 
     #[test]
