@@ -20,7 +20,9 @@ pub enum MicPermission {
 mod imp {
     use super::{AudioError, MicPermission};
     use objc2::runtime::Bool;
-    use objc2_av_foundation::{AVCaptureDevice, AVAuthorizationStatus, AVMediaTypeAudio, AVMediaType};
+    use objc2_av_foundation::{
+        AVAuthorizationStatus, AVCaptureDevice, AVMediaType, AVMediaTypeAudio,
+    };
     use std::sync::mpsc;
 
     /// Текущий статус: только чтение, диалог не поднимает.

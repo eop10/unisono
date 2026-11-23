@@ -1,5 +1,7 @@
 mod bridge;
 mod commands;
+// Нативное меню — desktop-платформы (Tauri не собирает menu под Android).
+#[cfg(desktop)]
 mod menu;
 
 use tauri::Manager;
@@ -36,6 +38,7 @@ pub fn run() {
         })
         .setup(|app| {
             // Нативное меню (6.7): до запуска окна, ошибки не критичны.
+            #[cfg(desktop)]
             if let Err(e) = menu::build(app.handle()) {
                 log::warn!("меню не собрано: {e}");
             }
