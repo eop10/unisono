@@ -143,6 +143,27 @@ describe('audio stream store (4A)', () => {
     expect(get(tuner).noteMidi).toBe(40);
   });
 
+  it('watchdog give-up state drops the listening flag', async () => {
+    await startListening();
+    expect(get(listening)).toBe(true);
+    const channel = vi
+      .mocked(ipc.startListening)
+      .mock.calls.at(-1)?.[0] as Channel<TunerState>;
+    // 7.2.1: наблюдатель исчерпал попытки и отправил ошибку в канал.
+    channel.onmessage?.({
+      kind: 'error',
+      f0: null,
+      cents: null,
+      clarity: 0,
+      db: -180,
+      noteMidi: null,
+      targetHz: null,
+      stringIndices: [],
+    });
+    expect(get(listening)).toBe(false);
+    expect(get(tuner).kind).toBe('error');
+  });
+
   it('tagged permission error maps to nopermission, other audio errors to error', async () => {
     // Формат serde: {"kind":"permissionDenied"} (tag+content, camelCase).
     vi.mocked(ipc.startListening).mockRejectedValueOnce({ kind: 'permissionDenied' });

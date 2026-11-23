@@ -13,7 +13,7 @@
 //! происходит вне командного потока, а сам `Stream` не пересекает границы
 //! потоков — без `unsafe`.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -43,25 +43,27 @@ struct Owner {
 }
 
 impl Owner {
-    fn spawn(overruns: Arc<AtomicU32>) -> Self {
+    fn spawn(overruns: Arc<AtomicU32>, stream_failed: Arc<AtomicBool>) -> Self {
         let (tx, rx) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("unisono-cpal-owner".into())
-            .spawn(move || owner_loop(rx, overruns))
+            .spawn(move || owner_loop(rx, overruns, stream_failed))
             .expect("не удалось создать поток-владелец");
         Self { tx, thread }
     }
 }
 
-fn owner_loop(rx: mpsc::Receiver<Command>, overruns: Arc<AtomicU32>) {
-    // Stream живёт, пока лежит в этой переменной; take()+drop() освобождает
-    // устройство (7.1.4).
+fn owner_loop(
+    rx: mpsc::Receiver<Command>,
+    overruns: Arc<AtomicU32>,
+    stream_failed: Arc<AtomicBool>,
+) {
     let mut stream: Option<cpal::Stream> = None;
     while let Ok(cmd) = rx.recv() {
         match cmd {
             Command::Start { producer, reply } => {
                 drop(stream.take()); // повторный start переоткрывает устройство
-                match open_stream(producer, Arc::clone(&overruns)) {
+                match open_stream(producer, Arc::clone(&overruns), Arc::clone(&stream_failed)) {
                     Ok((s, rate)) => {
                         stream = Some(s);
                         let _ = reply.send(Ok(rate));
@@ -81,10 +83,13 @@ fn owner_loop(rx: mpsc::Receiver<Command>, overruns: Arc<AtomicU32>) {
 }
 
 /// Захват через `cpal`. Ошибки устройства — значения [`AudioError`];
-/// переполнения ring buffer считаются атомарно и не паникуют.
+/// переполнения ring buffer считаются атомарно и не паникуют. Ошибка
+/// потока (`err_cb`) поднимает `failed` — сигнал наблюдателю переоткрыть
+/// устройство (7.2.1).
 pub struct CpalSource {
     sample_rate: u32,
     overruns: Arc<AtomicU32>,
+    stream_failed: Arc<AtomicBool>,
     owner: Option<Owner>,
 }
 
@@ -93,6 +98,7 @@ impl CpalSource {
         Self {
             sample_rate: 0,
             overruns: Arc::new(AtomicU32::new(0)),
+            stream_failed: Arc::new(AtomicBool::new(false)),
             owner: None,
         }
     }
@@ -114,10 +120,16 @@ impl AudioSource for CpalSource {
         self.sample_rate
     }
 
+    /// Ошибка потока — сигнал наблюдателю (7.2.1).
+    fn failed(&self) -> bool {
+        self.stream_failed.load(Ordering::Relaxed)
+    }
+
     fn start(&mut self, sink: rtrb::Producer<f32>) -> Result<(), AudioError> {
         self.stop();
         self.overruns = Arc::new(AtomicU32::new(0));
-        let owner = Owner::spawn(Arc::clone(&self.overruns));
+        self.stream_failed = Arc::new(AtomicBool::new(false));
+        let owner = Owner::spawn(Arc::clone(&self.overruns), Arc::clone(&self.stream_failed));
         let (tx_reply, rx_reply) = mpsc::channel();
         owner
             .tx
@@ -154,11 +166,17 @@ impl AudioSource for CpalSource {
 
 /// Открытие устройства: моно f32 @ 48 кГц приоритетно, fallback — фактическая
 /// конфигурация (7.2.1); частота берётся из устройства, не из константы.
+/// Сначала — явная проверка TCC (7.2.1): при отказе CoreAudio отдаёт тишину
+/// вместо ошибки, и без проверки UI показывал бы «Слушаю…».
 fn open_stream(
     producer: rtrb::Producer<f32>,
     overruns: Arc<AtomicU32>,
+    stream_failed: Arc<AtomicBool>,
 ) -> Result<(cpal::Stream, u32), AudioError> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+
+    crate::tcc::ensure_mic_permission()?;
+    stream_failed.store(false, Ordering::Relaxed);
 
     let host = cpal::default_host();
     let device = host
@@ -168,7 +186,7 @@ fn open_stream(
         .default_input_config()
         .map_err(|e| config_error(&e.to_string()))?;
 
-    let (config, channels) = match device.supported_input_configs() {
+    let (mut config, channels) = match device.supported_input_configs() {
         Ok(ranges) => {
             let mono_48k = ranges.into_iter().any(|r| {
                 r.channels() == 1
@@ -207,12 +225,51 @@ fn open_stream(
         ),
     };
 
-    let stream = build_stream(&device, &config, channels, producer, overruns)?;
-    // Первый play() поднимает системный запрос микрофона (TCC, 7.2.1).
+    // Fixed(512) — запрос, а не гарантия (7.2.1): если устройство объявляет
+    // фиксированный диапазон буферов без 512 — сразу берём Default.
+    if !supports_fixed_buffer(&device, &config) {
+        tracing::warn!("устройство не поддерживает буфер 512 — повтор с Default");
+        config.buffer_size = cpal::BufferSize::Default;
+    }
+
+    let stream = build_stream(
+        &device,
+        &config,
+        channels,
+        producer,
+        overruns,
+        Arc::clone(&stream_failed),
+    )?;
+    // play() после явной проверки TCC выше (7.2.1).
     stream
         .play()
         .map_err(|e| AudioError::Stream(e.to_string()))?;
     Ok((stream, config.sample_rate.0))
+}
+
+/// Объявляет ли устройство поддержку `BufferSize::Fixed(512)` для конфига?
+/// `Unknown` считаем поддержкой; фиксированный диапазон без 512 — нет.
+fn supports_fixed_buffer(device: &cpal::Device, config: &cpal::StreamConfig) -> bool {
+    use cpal::traits::DeviceTrait;
+    let Ok(ranges) = device.supported_input_configs() else {
+        return true;
+    };
+    let rate = config.sample_rate.0;
+    for range in ranges {
+        if range.channels() != config.channels
+            || range.sample_format() != cpal::SampleFormat::F32
+            || range.min_sample_rate().0 > rate
+            || range.max_sample_rate().0 < rate
+        {
+            continue;
+        }
+        if let cpal::SupportedBufferSize::Range { min, max } = range.buffer_size() {
+            if *min > BUFFER_SIZE || *max < BUFFER_SIZE {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Сборка входного потока: колбэк без аллокаций — только `Producer` и счётчик.
@@ -222,6 +279,7 @@ fn build_stream(
     channels: usize,
     mut producer: rtrb::Producer<f32>,
     overruns: Arc<AtomicU32>,
+    stream_failed: Arc<AtomicBool>,
 ) -> Result<cpal::Stream, AudioError> {
     use cpal::traits::DeviceTrait;
     let data_cb = move |data: &[f32], _info: &cpal::InputCallbackInfo| {
@@ -233,7 +291,11 @@ fn build_stream(
             }
         }
     };
-    let err_cb = |err: cpal::StreamError| tracing::error!(?err, "audio stream error");
+    // Ошибка потока — сигнал наблюдателю: не только лог (7.2.1).
+    let err_cb = move |err: cpal::StreamError| {
+        stream_failed.store(true, Ordering::Relaxed);
+        tracing::error!(?err, "audio stream error");
+    };
     device
         .build_input_stream(config, data_cb, err_cb, None)
         .map_err(|e| stream_error(&e.to_string()))

@@ -7,7 +7,7 @@ use tuner_audio::AudioError;
 use tuner_core::engine::{Sensitivity, TunerState};
 use tuner_core::music::InstrumentRegistry;
 
-use crate::bridge::{send_states_to, AppState, TuningSpec};
+use crate::bridge::{AppState, TuningSpec};
 
 /// Каталог для UI: инструменты и встроенные строи из ядра, без дублей в TS.
 /// Пользовательские строи приезжают из tuner-storage (4B), не отсюда.
@@ -33,7 +33,7 @@ pub fn start_listening(
     channel: Channel<TunerState>,
     state: State<'_, AppState>,
 ) -> Result<(), AudioError> {
-    state.start_capture(send_states_to(channel))
+    state.start_capture(crate::bridge::channel_sink(channel))
 }
 
 /// Остановить прослушивание: cpal и поток анализа (включая закрытие окна).

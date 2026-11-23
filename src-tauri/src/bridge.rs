@@ -5,38 +5,36 @@
 //! через IPC не передаётся. Ошибки устройства — значения [`AudioError`],
 //! UI превращает их в состояния `error`/`nopermission`.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 
 use tauri::ipc::Channel;
-use tuner_audio::{spawn_analyzer, AudioError, AudioSource, PlatformSource, RING_CAPACITY};
+use tuner_audio::{AudioError, PlatformSource, StateSink, SupervisedCapture, WatchdogConfig};
 use tuner_core::engine::{Sensitivity, TunerEngine, TunerState};
 use tuner_core::music::{InstrumentRegistry, Tuning};
 
 /// Минимальный интервал отправки состояния в WebView: кап ~60 Гц (3.6).
 /// Анализатор при 48 кГц даёт ~47 кадров/с — все проходят.
-const SEND_MIN_INTERVAL: Duration = Duration::from_millis(15);
+const SEND_MIN_INTERVAL_MS: u64 = 15;
 
 /// Границы опорной частоты (6.5); движок доверяет, но проверяет.
 const A4_MIN: f64 = 400.0;
 const A4_MAX: f64 = 480.0;
 
-/// Сессия захвата: флаг «слушаем» и поток анализа. Под одним замком,
-/// чтобы start/stop/закрытие окна не гонялись между собой.
-struct Session {
-    listening: bool,
-    analyzer: Option<JoinHandle<()>>,
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
-/// Состояние приложения: движок (общий с анализатором), источник звука,
-/// сессия захвата и хранилище настроек/пресетов (§5.2). Если каталог
-/// конфигурации недоступен, приложение работает, но настройки не
-/// переживают перезапуск — это не критичный путь.
+/// Состояние приложения: движок (общий с анализатором), живой захват
+/// под наблюдением (7.2.1) и хранилище настроек/пресетов (§5.2).
+/// Если каталог конфигурации недоступен, приложение работает, но настройки
+/// не переживают перезапуск — это не критичный путь.
 pub struct AppState {
     engine: Arc<Mutex<TunerEngine>>,
-    source: Mutex<PlatformSource>,
-    session: Mutex<Session>,
+    capture: Mutex<Option<Arc<SupervisedCapture<PlatformSource>>>>,
     store: Mutex<Option<tuner_storage::Store>>,
 }
 
@@ -84,11 +82,7 @@ impl AppState {
         );
         Self {
             engine: Arc::new(Mutex::new(engine)),
-            source: Mutex::new(PlatformSource::new()),
-            session: Mutex::new(Session {
-                listening: false,
-                analyzer: None,
-            }),
+            capture: Mutex::new(None),
             store: Mutex::new(None),
         }
     }
@@ -98,43 +92,32 @@ impl AppState {
         *self.store.lock().expect("store") = Some(store);
     }
 
-    /// Запускает захват: ring buffer → cpal → поток анализа → `on_state`.
+    /// Запускает захват под наблюдением (7.2.1): кольцо → cpal → анализатор
+    /// → `sink`; тишина дольше секунды или ошибка потока — переоткрытие.
     /// Повторный вызов переоткрывает микрофон (смена разрешения — 4.7).
-    pub fn start_capture(
-        &self,
-        on_state: impl FnMut(TunerState) + Send + 'static,
-    ) -> Result<(), AudioError> {
-        let mut session = self.session.lock().expect("session");
-        self.stop_locked(&mut session);
-
-        let (producer, consumer) = rtrb::RingBuffer::new(RING_CAPACITY);
-        // Порядок замков всегда session → source, взаимоблокировок нет.
-        self.source.lock().expect("source").start(producer)?;
-        let fs = self.source.lock().expect("source").sample_rate();
-
-        // fs из устройства, не из константы: движок пересоберётся при отличии.
-        let engine = Arc::clone(&self.engine);
-        let handle = spawn_analyzer(consumer, engine, fs, on_state);
-        session.listening = true;
-        session.analyzer = Some(handle);
+    pub fn start_capture(&self, sink: StateSink) -> Result<(), AudioError> {
+        let mut slot = self.capture.lock().expect("capture");
+        // Предыдущая сессия, если была, останавливается полностью.
+        if let Some(previous) = slot.take() {
+            previous.stop();
+        }
+        let capture = SupervisedCapture::spawn(
+            Arc::clone(&self.engine),
+            // Каждое (пере)открытие — новый источник: поток-владелец
+            // устройства пересоздаётся, устройство освобождается.
+            Arc::new(PlatformSource::new),
+            sink,
+            WatchdogConfig::default(),
+        )?;
+        *slot = Some(capture);
         Ok(())
     }
 
-    /// Останавливает захват: cpal и поток анализа (3.6: окно отдельно от аудио).
+    /// Останавливает захват: источник, анализатор, наблюдатель
+    /// (3.6: окно отдельно от аудио; закрытие окна зовёт то же).
     pub fn stop(&self) {
-        let mut session = self.session.lock().expect("session");
-        self.stop_locked(&mut session);
-    }
-
-    fn stop_locked(&self, session: &mut Session) {
-        if !session.listening {
-            return;
-        }
-        session.listening = false;
-        // Дроп stream дропает producer → анализатор видит abandoned и выходит.
-        self.source.lock().expect("source").stop();
-        if let Some(handle) = session.analyzer.take() {
-            let _ = handle.join();
+        if let Some(capture) = self.capture.lock().expect("capture").take() {
+            capture.stop();
         }
     }
 
@@ -401,18 +384,19 @@ impl AppState {
     }
 }
 
-/// Состояние в WebView: ring buffer → анализатор → троттлинг → Channel.
-/// Сырое аудио через IPC не идёт (3.6).
-pub fn send_states_to(channel: Channel<TunerState>) -> impl FnMut(TunerState) + Send + 'static {
-    let mut last_sent: Option<Instant> = None;
-    move |state| {
-        let now = Instant::now();
-        let due = last_sent.is_none_or(|t| now.duration_since(t) >= SEND_MIN_INTERVAL);
-        if due {
-            last_sent = Some(now);
+/// Состояния в WebView через `Channel`: троттлинг ≥ 15 мс (кап ~60 Гц, 3.6),
+/// сырое аудио через IPC не идёт. Замер — атомарный: sink общий для
+/// переоткрытий потока, поэтомуFn, не FnMut.
+pub fn channel_sink(channel: Channel<TunerState>) -> StateSink {
+    let last_sent_ms = AtomicU64::new(0);
+    Arc::new(move |state: TunerState| {
+        let now = now_ms();
+        let last = last_sent_ms.load(Ordering::Relaxed);
+        if last == 0 || now.saturating_sub(last) >= SEND_MIN_INTERVAL_MS {
+            last_sent_ms.store(now, Ordering::Relaxed);
             let _ = channel.send(state);
         }
-    }
+    })
 }
 
 #[cfg(test)]
@@ -433,7 +417,7 @@ mod tests {
         assert_eq!(c.tolerance_cents, 3.0);
         assert_eq!(c.sensitivity, Sensitivity::Normal);
         assert_eq!(c.manual_string, None);
-        assert!(!state.session.lock().unwrap().listening);
+        assert!(state.capture.lock().unwrap().is_none());
     }
 
     #[test]
@@ -495,7 +479,7 @@ mod tests {
     fn stop_on_fresh_state_is_noop() {
         let state = AppState::new();
         state.stop();
-        assert!(!state.session.lock().unwrap().listening);
+        assert!(state.capture.lock().unwrap().is_none());
         // Повторный stop — тоже без паники.
         state.stop();
     }

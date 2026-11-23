@@ -20,7 +20,7 @@ pub const RING_CAPACITY: usize = 48_000;
 /// `Serialize` — тип ошибки команды `start_listening` в Tauri; формат
 /// стабильный тегированный объект: `{"kind":"permissionDenied"}`,
 /// `{"kind":"device","message":"busy"}`.
-#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[derive(Debug, thiserror::Error, serde::Serialize, Clone)]
 #[serde(tag = "kind", content = "message", rename_all = "camelCase")]
 pub enum AudioError {
     /// Нет устройства ввода.
@@ -49,6 +49,11 @@ pub trait AudioSource: Send {
     fn start(&mut self, sink: rtrb::Producer<f32>) -> Result<(), AudioError>;
     /// Останавливает поток и освобождает устройство; `start` открывает заново.
     fn stop(&mut self);
+    /// Сообщал ли колбэк потока об ошибке: сигнал наблюдателю переоткрыть
+    /// устройство (7.2.1). Реализации без ошибок потока возвращают `false`.
+    fn failed(&self) -> bool {
+        false
+    }
 }
 
 /// Запускает поток анализа (3.6): ring buffer → окно движка → `on_state`.
@@ -119,6 +124,10 @@ pub fn spawn_analyzer(
 mod android_stub;
 #[cfg(not(target_os = "android"))]
 mod cpal_source;
+pub mod tcc;
+pub mod watchdog;
+
+pub use watchdog::{StateSink, SupervisedCapture, WatchdogConfig};
 
 #[cfg(target_os = "android")]
 pub use android_stub::StubSource as PlatformSource;

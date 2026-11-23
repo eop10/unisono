@@ -44,7 +44,13 @@ function audioErrorState(err: unknown): TunerState {
 
 export async function startListening(): Promise<void> {
   const channel = new Channel<TunerState>();
-  channel.onmessage = (state) => tuner.set(state);
+  channel.onmessage = (state) => {
+    // Watchdog сдался (7.2.1): захват мёртв — кнопка возвращается в «Слушать».
+    if (state.kind === 'error' || state.kind === 'nopermission') {
+      listening.set(false);
+    }
+    tuner.set(state);
+  };
   // Сразу в «Слушаю…»: после «Повторить» не мигают старые цифры (ревью 4A).
   tuner.set({ ...SILENT });
   try {

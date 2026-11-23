@@ -43,7 +43,9 @@ pub struct TunerState {
     pub string_indices: Vec<usize>,
 }
 
-/// Kind-состояния из 4.4, без аудио-ошибок (см. модуль).
+/// Kind-состояния из 4.4. `Error`/`NoPermission` — состояния аудио-слоя:
+/// сам движок их не создаёт, но канал в UI несёт (7.2.1: watchdog
+/// сообщает, что захват умер и не восстановился).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TunerKind {
@@ -51,6 +53,10 @@ pub enum TunerKind {
     Uncertain,
     Tracking,
     InTune,
+    /// Микрофон занят или недоступен (4.4).
+    Error,
+    /// Нет разрешения на микрофон (4.4, TCC).
+    NoPermission,
 }
 
 /// Чувствительность ввода (6.6, §5.3): порог достоверности `clarity`,
