@@ -76,6 +76,10 @@
   const op = $derived(dim ? 0.35 : 1);
   const nx = $derived(x(Math.max(-50, Math.min(50, needle))));
   const now = $derived(Math.round(Math.max(-50, Math.min(50, cents ?? 0))));
+  // 6.3.2: dim == Uncertain — цифры скрыты, скринридер тоже не объявляет центы.
+  const ariaText = $derived(
+    cents === null || dim ? '—' : `${fmtCents(cents)} ${t(lang, 'cents')}`,
+  );
 </script>
 
 <svg
@@ -87,7 +91,7 @@
   aria-valuemin={-50}
   aria-valuemax={50}
   aria-valuenow={now}
-  aria-valuetext={cents === null ? '—' : `${fmtCents(cents)} ${t(lang, 'cents')}`}
+  aria-valuetext={ariaText}
 >
   <line x1={PAD - 4} y1={BASE} x2={W - PAD + 4} y2={BASE} stroke="var(--line)" stroke-width="1" opacity={op} />
   {#each coarse as tick}

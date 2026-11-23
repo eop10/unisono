@@ -3,30 +3,44 @@
   //! в пределах инструмента, лимит 20; дубли нот разрешены (унисон).
   import Sheet from './Sheet.svelte';
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { t } from '../lib/i18n';
   import { noteLetter, noteOctave } from '../lib/notes';
   import { instrumentName } from '../lib/types';
   import type { Tuning } from '../lib/types';
-  import { MIDI_MAX, MIDI_MIN, validateTuning } from '../lib/validate';
-  import { instruments } from '../stores/catalog';
+  import { MIDI_MAX, MIDI_MIN, NAME_MAX, validateTuning } from '../lib/validate';
+  import { instruments, tuningsFor } from '../stores/catalog';
   import { customs, newPresetId, savePreset } from '../stores/customs';
   import { closeOverlay, editorContext } from '../stores/overlay';
   import { selectTuning, settings } from '../stores/settings';
 
   const ctx = $derived($editorContext);
   const lang = $derived($settings.language);
+  const notation = $derived($settings.notation);
   const inst = $derived($instruments.find((i) => i.id === ctx?.instrumentId) ?? null);
   const existing = $derived($customs.filter((c) => c.instrument_id === ctx?.instrumentId));
   const editing = $derived(existing.find((c) => c.id === ctx?.tuningId) ?? null);
 
   let name = $state('');
-  let strings = $state<number[]>([64, 69, 74]);
+  let strings = $state<number[]>([]);
   let error = $state<ReturnType<typeof validateTuning>>(null);
 
+  /** Новый строй по умолчанию — струны текущего строя инструмента (гитара → 6). */
+  function defaultStrings(instrumentId: string): number[] {
+    const list = tuningsFor(instrumentId);
+    const s = get(settings);
+    const current =
+      s.instrumentId === instrumentId ? list.find((t) => t.id === s.tuningId) : undefined;
+    return [...(current ?? list[0])?.strings ?? [69]];
+  }
+
   onMount(() => {
+    if (!ctx) return;
     if (editing) {
       name = 'Custom' in editing.name ? editing.name.Custom : '';
       strings = [...editing.strings];
+    } else {
+      strings = defaultStrings(ctx.instrumentId);
     }
   });
 
@@ -67,7 +81,7 @@
   >
     <div class="field">
       <label for="te-name">{t(lang, 'name')}</label>
-      <input id="te-name" data-autofocus maxlength="32" bind:value={name} />
+      <input id="te-name" data-autofocus maxlength={NAME_MAX} bind:value={name} oninput={() => (error = null)} />
     </div>
     <div class="field">
       <label for="te-add">{t(lang, 'strings')} ({strings.length}/8)</label>
@@ -78,10 +92,11 @@
             value={m}
             onchange={(e) => {
               strings[i] = Number(e.currentTarget.value);
+              error = null;
             }}
           >
             {#each midiOptions as opt}
-              <option value={opt}>{noteLetter(opt, 'latin', lang)}{noteOctave(opt)} · {opt}</option>
+              <option value={opt}>{noteLetter(opt, notation, lang)}{noteOctave(opt)} · {opt}</option>
             {/each}
           </select>
           <button
@@ -90,6 +105,7 @@
             disabled={strings.length <= 1}
             onclick={() => {
               strings = strings.filter((_, j) => j !== i);
+              error = null;
             }}
           >✕</button>
         </div>
@@ -100,6 +116,7 @@
         disabled={strings.length >= 8}
         onclick={() => {
           strings = [...strings, 69];
+          error = null;
         }}
       >{t(lang, 'add_string')}</button>
     </div>
