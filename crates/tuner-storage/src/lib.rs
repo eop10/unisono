@@ -11,6 +11,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tuner_core::music::{InstrumentRegistry, INSTRUMENTS};
@@ -228,12 +229,16 @@ pub enum StoreError {
     InvalidPreset { id: String, reason: String },
     #[error("лимит {limit} пользовательских строёв на инструмент {instrument}")]
     PresetLimit { instrument: String, limit: usize },
+    #[error("схема файла {found} новее поддерживаемой {current}, перезапись запрещена")]
+    NewerSchema { found: u32, current: u32 },
 }
 
 /// Хранилище в каталоге конфигурации: `settings.json`, `presets.json` (§5.2).
 /// Путь задаёт приложение; крейт про Tauri не знает.
 pub struct Store {
     dir: PathBuf,
+    settings_read_only: AtomicBool,
+    newer_schema_found: AtomicU32,
 }
 
 impl Store {
@@ -246,6 +251,8 @@ impl Store {
         tracing::info!(dir = %dir.display(), "хранилище открыто");
         Ok(Self {
             dir: dir.to_path_buf(),
+            settings_read_only: AtomicBool::new(false),
+            newer_schema_found: AtomicU32::new(0),
         })
     }
 
@@ -285,6 +292,8 @@ impl Store {
         match serde_json::from_value::<Settings>(value) {
             Ok(mut s) => {
                 if version > SCHEMA_VERSION {
+                    self.settings_read_only.store(true, Ordering::SeqCst);
+                    self.newer_schema_found.store(version, Ordering::SeqCst);
                     // Файл от более новой версии: читаем известные поля,
                     // ничего не перезаписываем, уведомляем (§5.8.3).
                     tracing::warn!(
@@ -294,6 +303,8 @@ impl Store {
                     );
                     s.schema_version = version;
                 } else {
+                    self.settings_read_only.store(false, Ordering::SeqCst);
+                    self.newer_schema_found.store(0, Ordering::SeqCst);
                     if version < SCHEMA_VERSION {
                         // Миграция 1→2: instrument/tuning/language приходят
                         // дефолтами (`#[serde(default)]`), версия становится 2.
@@ -316,7 +327,14 @@ impl Store {
     }
 
     /// Атомарная запись настроек; `schema_version` всегда текущая.
+    /// Если файл от более новой версии схемы — возвращает ошибку и не перезаписывает (3.5, 5.8.3).
     pub fn save_settings(&self, settings: &Settings) -> Result<(), StoreError> {
+        if self.settings_read_only.load(Ordering::SeqCst) {
+            return Err(StoreError::NewerSchema {
+                found: self.newer_schema_found.load(Ordering::SeqCst),
+                current: SCHEMA_VERSION,
+            });
+        }
         let mut settings = settings.clone().sanitize();
         settings.schema_version = SCHEMA_VERSION;
         atomic_write_json(&self.settings_path(), &settings)
@@ -600,6 +618,22 @@ mod tests {
         assert_eq!(s.instrument_id, "cello");
         // Файл не перезаписан (§5.8.3).
         assert_eq!(fs::read_to_string(store.settings_path()).unwrap(), before);
+
+        // Попытка сохранить при более новой версии схемы возвращает Err и не пишет файл (3.5)
+        let save_res = store.save_settings(&Settings::default());
+        assert!(matches!(
+            save_res,
+            Err(StoreError::NewerSchema {
+                found: 99,
+                current: SCHEMA_VERSION
+            })
+        ));
+        assert_eq!(fs::read_to_string(store.settings_path()).unwrap(), before);
+
+        // Обычный файл (схема <= SCHEMA_VERSION) сохраняется как раньше
+        let (_dir2, store2) = tmp_store();
+        assert!(store2.save_settings(&Settings::default()).is_ok());
+        assert!(store2.settings_path().exists());
     }
 
     #[test]
