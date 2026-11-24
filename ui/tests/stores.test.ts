@@ -47,6 +47,7 @@ import {
 import { loadPresets, deletePreset as removePreset } from '../src/stores/customs';
 import {
   listening,
+  resetVibrateThrottle,
   selectString,
   startListening,
   stopListening,
@@ -56,6 +57,7 @@ import { customs } from '../src/stores/customs';
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  resetVibrateThrottle();
   settings.set({ ...DEFAULT_SETTINGS });
   customs.set([]);
   await loadCatalog();
@@ -492,6 +494,56 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
         stringIndices: [0],
       });
       expect(ipc.vibrate).not.toHaveBeenCalled();
+    });
+
+    it('throttles vibration to at most once per 1000ms', async () => {
+      vi.useFakeTimers();
+      let messageHandler: ((s: TunerState) => void) | undefined;
+      vi.mocked(ipc.startListening).mockImplementationOnce(async (channel: unknown) => {
+        messageHandler = (channel as Channel<TunerState>).onmessage;
+      });
+      settings.set({ ...DEFAULT_SETTINGS, haptics: true });
+      await startListening();
+
+      const trackingState: TunerState = {
+        kind: 'tracking',
+        cents: -5,
+        clarity: 0.9,
+        db: -20,
+        noteMidi: 40,
+        targetHz: 440,
+        f0: 435,
+        stringIndices: [0],
+      };
+      const intuneState: TunerState = {
+        kind: 'intune',
+        cents: 0,
+        clarity: 0.98,
+        db: -18,
+        noteMidi: 40,
+        targetHz: 440,
+        f0: 440,
+        stringIndices: [0],
+      };
+
+      // First transition into intune
+      messageHandler!(trackingState);
+      messageHandler!(intuneState);
+      expect(ipc.vibrate).toHaveBeenCalledTimes(1);
+
+      // Fast toggle out and back in after 250ms (< 1000ms)
+      vi.advanceTimersByTime(250);
+      messageHandler!(trackingState);
+      messageHandler!(intuneState);
+      expect(ipc.vibrate).toHaveBeenCalledTimes(1);
+
+      // After pause > 1000ms from the first vibration
+      vi.advanceTimersByTime(800); // 250 + 800 = 1050ms > 1000ms
+      messageHandler!(trackingState);
+      messageHandler!(intuneState);
+      expect(ipc.vibrate).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
     });
   });
 });

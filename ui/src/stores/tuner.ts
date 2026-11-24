@@ -32,6 +32,11 @@ export const tuner = writable<TunerState>({ ...SILENT });
 export const listening = writable(false);
 
 let prevKind: TunerKind = 'silent';
+let lastVibrateAt = 0;
+
+export function resetVibrateThrottle(): void {
+  lastVibrateAt = 0;
+}
 
 /** Аудио-ошибка → экран (4.4): отказ в доступе или сбой устройства.
  *  Ошибка приходит тегированным объектом `{"kind":"permissionDenied"}`
@@ -91,7 +96,11 @@ export async function startListening(): Promise<void> {
       void keepScreenOn(false);
     } else if (state.kind === 'intune' && prevKind !== 'intune') {
       if (get(settings).haptics) {
-        void vibrate();
+        const now = Date.now();
+        if (now - lastVibrateAt >= 1000) {
+          lastVibrateAt = now;
+          void vibrate();
+        }
       }
     }
     prevKind = state.kind;
@@ -119,6 +128,7 @@ export async function startListening(): Promise<void> {
 
 export async function stopListening(): Promise<void> {
   prevKind = 'silent';
+  lastVibrateAt = 0;
   try {
     await ipcStop();
   } catch {
