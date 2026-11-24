@@ -1,4 +1,4 @@
-# Задача для Gemini 3.8 Flash в Antigravity: этап 6 — полировка: выбор входа (#12) и фиксация показаний (#13)
+# Задача для Gemini 3.8 Flash в Antigravity: rev 6.1 — downmix многоканального входа
 
 Ты работаешь в существующем репозитории **Unisono** (Rust + Tauri 2 + Svelte 5).
 Открой папку проекта в Antigravity и работай в режиме агента: читай файлы, правь код
@@ -6,200 +6,72 @@
 
 - Репозиторий: https://github.com/eop10/unisono
 - Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
-- Последний запушенный коммит — `143eee6`; поверх него локально лежит только этот файл
+- Последний запушенный коммит — `4c84491`; поверх него локально лежит только этот файл
   (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
-- Этапы 0–5 реализованы (5 — по коду; ручная приёмка Android идёт отдельно).
-  Это **этап 6 (полировка)**: две фичи из приёмки 4B —
-  **#12 выбор аудиовхода (desktop-only)** и **#13 фиксация показаний при затухании струны**.
+- Это точечная правка по приёмке stage 6 (**rev 6.1**). Код движка, UI, хранилище
+  не трогать.
 
 ## 0. Прочитай перед началом
 
-1. `HANDOFF.md` — правила, §8 «Версии и ключи».
-2. `docs/source/04_dsp.md` §4.3 — машина состояний (будешь править).
-3. `docs/source/05_data.md` §5.3, §5.8 — схема настроек и миграции (будешь править).
-4. `docs/source/06_ui.md` §6.3–6.4, §6.8 — экран, лист настроек (будешь править).
-5. `docs/source/07_platform.md` §7.2 — захват и устройства (будешь править).
-6. `docs/source/08_build_test.md` — проверки (будешь править).
-7. `.github/issues/06-polish.md` — зеркало этапа.
-8. Код: `crates/tuner-storage/src/lib.rs` (`SCHEMA_VERSION`, `Settings`, миграция
-   на чтении), `crates/tuner-audio/src/cpal_source.rs` (`open_stream`,
-   `default_input_device`), `src-tauri/src/bridge.rs` (`start_capture`,
-   `Arc::new(PlatformSource::new)`), `src-tauri/src/commands.rs`,
-   `crates/tuner-core/src/engine.rs` (`LastReading`, `TunerKind`, обработка кадра),
-   `ui/src/lib/SettingsSheet.svelte`, `ui/src/stores/settings.ts`, `ui/src/lib/types.ts`.
+1. `crates/tuner-audio/src/cpal_source.rs` — `build_stream` (колбэк захвата) и
+   `open_stream` (выбор конфигурации).
+2. `docs/source/07_platform.md` §7.2 — захват.
 
-## 1. Правила этапа
+## 1. Контекст: звук теряется у мультиканальных интерфейсов
 
-- **DSP-формулы, NSDF/MPM и контракт `PitchDetector` не менять.** #13 — изменение
-  машины состояний уровня движка (над детектором), не фильтров.
-- `docs/` править **только** в файлах из Part 5 — разрешение владельца получено:
-  `04_dsp.md`, `05_data.md`, `06_ui.md`, `07_platform.md`, `08_build_test.md`.
-  Остальные `docs/`, `brand/`, `design/` не трогать.
-- Android не ломать: выбор входа — desktop-only (на Android команда возвращает пустой
-  список, строка «Вход» в UI не показывается); `INTERNET` не возвращать;
-  `unsafe` только в `tuner-audio`; keystore не запрашивать.
-- Существующие инварианты движка не ослаблять: гистерезис струны, унисоны,
-  «в строе» 250 мс. Ожидания старых тестов под #13 можно обновлять, инварианты — нет.
-- Коммит после каждой части; push один раз в конце; гейт упал — стоп, команда/вывод/файл
-  в чат. Первый коммит включает этот файл.
+Приёмка с Focusrite Scarlett Solo (2 входных канала: 1 — XLR, 2 — инструментальный):
+выбор входа в настройках работает, устройство открывается, но тюнер слышит тишину.
+Причина — `build_stream`:
 
-## 2. Part 1 — хранилище: схема 3 и поле `input_device`
+```rust
+for &sample in data.iter().step_by(channels.max(1)) {
+```
 
-1. `crates/tuner-storage/src/lib.rs`:
-   - `Settings`: новое поле `pub input_device: Option<String>` (struct уже
-     `#[serde(default)]`; старый файл без поля читается с `None`);
-   - `Default`: `input_device: None`;
-   - `sanitize`: пустую строку после trim превращать в `None`;
-   - `SCHEMA_VERSION: u32 = 3`; в блоке миграции на чтении обновить комментарий
-     (1→2 и 2→3; сам механизм тот же — версия из файла, при `version < 3` — bump,
-     новые поля приходят дефолтами; guard `version > SCHEMA_VERSION` не трогать).
-2. Тесты (рядом с существующими фикстурами v1/v2):
-   - файл v2 без `input_device` → читается, `input_device == None`,
-     `schema_version` становится 3;
-   - файл v3 с `input_device: "AirPods"` → значение сохраняется;
-   - файл версии 4 → read-only, известные поля прочитаны (существующему тесту не мешать).
+`step_by(channels)` берёт **только канал 0**. У Scarlett канал 0 — пустой XLR,
+гитара во втором канале. Нужно микшировать все каналы кадра в моно (среднее):
+канал, в котором инструмент, заранее неизвестен.
 
-Гейт: `cargo test -p tuner-storage && cargo clippy --workspace --all-targets -- -D warnings`.
-Коммит: `storage: schema v3 with input_device setting (stage 6)`
+## 2. Part 1 — правка
 
-## 3. Part 2 — tuner-audio и bridge: выбор входа
-
-1. `crates/tuner-audio/src/cpal_source.rs`:
-   - `CpalSource` хранит `input: Option<String>`; `CpalSource::new()` → `None`;
-     дополнительный конструктор `with_input(Option<String>)`;
-   - `open_stream` принимает `Option<&str>`: найти устройство в
-     `host.input_devices()` по имени (`DeviceTrait::name()`); не нашли — **тихий
-     фолбэк** на вход по умолчанию (по критерию #12: без экрана ошибки).
-   - Проверку TCC сохранить первой, как сейчас.
-2. `crates/tuner-audio/src/lib.rs`: экспорт конструктора для bridge (cfg desktop).
-3. `src-tauri/src/bridge.rs`:
-   - `AppState`: поле `input_device: Arc<Mutex<Option<String>>>` (заводская фабрика
-     читает его **на каждый старт/переоткрытие**, не один раз при спавне);
-   - фабрика: desktop — замыкание `move || PlatformSource::with_input(slot.lock().clone())`;
-     Android — как сейчас (`OboeSource::new`); cfg-разветвление.
-4. `src-tauri/src/commands.rs`:
-   - `get_input_devices() -> Vec<String>`: desktop — имена входов CPAL (ошибки
-     перечисления пропускать, дубликаты убирать); Android — `vec![]`;
-   - `set_input_device(name: Option<String>)`: обновляет слот в `AppState`;
-     настройки сохраняются существующим `save_settings` (поле уже в схеме v3).
-     Перезапуск захвата — НЕ в команде, его делает UI (Part 3).
-   - Обе команды зарегистрировать в `invoke_handler`.
+1. `build_stream`: вместо `step_by` — итерация кадрами `data.chunks_exact(channels)`,
+   среднее всех каналов кадра через хелпер `fn downmix_frame(frame: &[f32]) -> f32`
+   (пустой кадр → 0.0; моно-кадр возвращается как есть). Аллокаций нет — реал-тайм.
+2. `channels == 0` защитить (трактуется как 1).
+3. Комментарий в колбэке: «интерфейсы с двумя входами (Scarlett и т.п.):
+   инструмент может быть во втором канале — микшируем в моно».
+4. Юнит-тесты `downmix_frame`: моно passthrough; `[0.0, 0.5]` → `0.25`;
+   `[0.25, -0.25]` → `0.0`; пустой → `0.0`.
+5. `docs/source/07_platform.md` §7.2: одна строка — многоканальные входы микшируются
+   в моно (среднее каналов), тюнер не зависит от номера канала
+   (разрешение владельца на этот файл получено на этапе 6).
 
 Гейт:
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo test -p tuner-audio
 cargo test --workspace
-export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
-export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
-export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
-cargo check -p app --target aarch64-linux-android
-```
-
-Коммит: `audio: selectable input device (desktop) with default-device fallback (stage 6)`
-
-## 4. Part 3 — UI: лист настроек «Вход»
-
-1. `ui/src/ipc/commands.ts`: `getInputDevices(): Promise<string[]>`,
-   `setInputDevice(name: string | null): Promise<void>`.
-2. `ui/src/stores/settings.ts`: поле `inputDevice: string | null` в `Settings`,
-   `DEFAULT_SETTINGS`, маппинг snake↔camel как у остальных полей;
-   `applySettingsToEngine` — вызывает `setInputDevice` (null → «по умолчанию»).
-3. `ui/src/lib/SettingsSheet.svelte`: строка **«Вход»** (select) — только если
-   платформа не `android` (геттер `getPlatform()` в сторе; скрывать на Android):
-   - первый пункт «По умолчанию» (значение пустое → null),
-   - затем имена из `getInputDevices()` (список обновлять при открытии листа;
-     если сохранённого имени нет в списке — показать его дополнительным пунктом
-     с пометкой «(не найдено)»);i18n-ключи в `ui/src/lib/i18n.ts` (ru/en);
-   - при смене: сохранить настройки, при идущем прослушивании —
-     `stopListening()` → `startListening()` (новое устройство применится на старте).
-4. Тесты: строка видна на desktop и скрыта на android; выбор пишет настройки и
-   вызывает перезапуск; null → «По умолчанию».
-
-Гейт: `npm --prefix ui run check && npm --prefix ui run test && npm --prefix ui run build`.
-Коммит: `ui: input device row in settings (stage 6)`
-
-## 5. Part 4 — движок: удержание показания при затухании (#13)
-
-`crates/tuner-core/src/engine.rs`:
-
-1. `EngineConfig`: поле `hold_ms: u32` (по умолчанию **1800**); bridge при сборке
-   `EngineConfig` ставит дефолт (в пользовательские настройки НЕ выносить).
-2. Движок ведёт `samples_since_confident: u64`: сбрасывается на `Tracking`/`InTune`
-   и на каждом уверенном чтении; иначе растёт на длину принятого кадра.
-3. Обработка кадра: `None`/`Silent`/`Uncertain` при наличии `last` и
-   `samples_since_confident ≤ hold_ms * fs / 1000` → отдавать состояние
-   `Uncertain` с последним показанием (нота/центы/цель из `LastReading`,
-   как уже делается для `Uncertain`; UI приглушает — уже есть).
-   После окна удержания → `Silent` (и `last` очищать, как сейчас).
-   Новый сигнал во время удержания → обычная обработка без задержек.
-4. `set_config`/`reset`: `samples_since_confident` обнулять; смена строя — как сейчас.
-5. Тесты: затухание (тон → тишина: в прежних кадрах остаётся `Uncertain` с последней
-   нотой, после `hold_ms` — `Silent`); новый сигнал посреди удержания → `Tracking`;
-   «в строе» 250 мс и гистерезис не ломаются. Старые тесты, ожидающие `Silent`
-   сразу после тишины, обновить под окно удержания (инварианты не ослаблять).
-
-Гейт: `cargo test -p tuner-core && cargo clippy --workspace --all-targets -- -D warnings`.
-Коммит: `engine: hold last reading on decay with configurable window (stage 6)`
-
-## 6. Part 5 — docs (разрешение владельца получено, 5 файлов)
-
-- `04_dsp.md` §4.3: абзац про окно удержания (`hold_ms`, дефолт 1800) — после
-  уверенного чтения при затухании показание удерживается приглушённым, затем `silent`;
-  DSP-фильтры не меняются.
-- `05_data.md` §5.3: поле `input_device` (`string | null`, null = системный вход
-  по умолчанию; desktop-only) и строка про схему 3 / миграцию 2→3.
-- `06_ui.md` §6.8: строка «Вход» в листе настроек (desktop-only, «По умолчанию»,
-  поведение при недоступном устройстве); §6.3: удержание показывается приглушённо.
-- `07_platform.md` §7.2: перечисление входов CPAL, выбор по имени, тихий фолбэк
-  на устройство по умолчанию; Android — не применимо.
-- `08_build_test.md`: проверки — миграция v2→v3, выбор входа (юнит/UI-тесты),
-  удержание при затухании (тесты движка).
-
-Гейт:
-
-```bash
+npm --prefix ui run check && npm --prefix ui run test && npm --prefix ui run build
 [ -x docs/.venv/bin/sphinx-build ] || { python3 -m venv docs/.venv && docs/.venv/bin/pip install -r docs/requirements.txt; }
 make -C docs html
 ```
 
-Коммит: `docs: input selection and decay hold (stage 6)`
+Коммит (включая этот файл): `audio: downmix multichannel capture to mono (rev 6.1)`
 
-## 7. Part 6 — гейты, пуш, отчёт
-
-Полные гейты (после всех частей):
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-npm --prefix ui run check
-npm --prefix ui run test
-npm --prefix ui run build
-cargo check -p app --target aarch64-linux-android   # env из Part 2
-cargo check -p app --target armv7-linux-androideabi # env из Part 2
-make -C docs html
-```
-
-Затем:
+## 3. Part 2 — пуш и отчёт
 
 ```bash
 git push origin main
 gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
-`.github/issues/06-polish.md`: отметить чекбоксы #12/#13, закрытые кодом.
+Отчёт в чат и коротко в #12: что изменено, вывод гейтов, номер зелёного CI-run.
+Владельцу написать явно: после пересборки cdhash меняется — macOS один раз
+спросит микрофон заново, это нормально.
 
-Отчёт в чат и коротко комментариями в #12 и #13: коммиты, вывод гейтов, номер зелёного
-CI-run, что осталось владельцу вручную (проверить выбор входа с аудиокартой на macOS,
-затухание струны на экране).
+## 4. Что НЕ делать
 
-## 8. Что НЕ делать
-
-- Не менять DSP-формулы, NSDF/MPM, контракт `PitchDetector`.
-- Не трогать `docs/` вне Part 5, `brand/`, `design/`, keystore, подпись Android.
-- Не возвращать `INTERNET`; не ломать Android-сборку.
-- Не начинать этап 7 (релиз), не публиковать 0.1.0; версию не менять.
+- Не трогать DSP-формулы, контракт `PitchDetector`, движок, UI, хранилище,
+  Android-код (oboe открывает моно явно — не задет).
+- Не трогать `docs/` вне §7.2, `brand/`, `design/`.

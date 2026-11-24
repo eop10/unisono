@@ -327,6 +327,17 @@ fn supports_fixed_buffer(device: &cpal::Device, config: &cpal::StreamConfig) -> 
     true
 }
 
+/// Микширование кадра многоканального потока в моно (среднее каналов).
+/// Пустой кадр даёт 0.0, моно-кадр возвращается без изменений.
+#[inline]
+pub(crate) fn downmix_frame(frame: &[f32]) -> f32 {
+    match frame.len() {
+        0 => 0.0,
+        1 => frame[0],
+        n => frame.iter().sum::<f32>() / n as f32,
+    }
+}
+
 /// Сборка входного потока: колбэк без аллокаций — только `Producer` и счётчик.
 fn build_stream(
     device: &cpal::Device,
@@ -337,9 +348,12 @@ fn build_stream(
     stream_failed: Arc<AtomicBool>,
 ) -> Result<cpal::Stream, AudioError> {
     use cpal::traits::DeviceTrait;
+    let ch = channels.max(1);
     let data_cb = move |data: &[f32], _info: &cpal::InputCallbackInfo| {
-        // Реал-тайм (3.6): моно-канал из interleaved, без аллокаций и блокировок.
-        for &sample in data.iter().step_by(channels.max(1)) {
+        // Реал-тайм (3.6): интерфейсы с двумя входами (Scarlett и т.п.):
+        // инструмент может быть во втором канале — микшируем в моно.
+        for frame in data.chunks_exact(ch) {
+            let sample = downmix_frame(frame);
             // Переполнение не должно ронять аудио-поток — только счётчик.
             if producer.push(sample).is_err() {
                 overruns.fetch_add(1, Ordering::Relaxed);
@@ -430,5 +444,17 @@ mod tests {
     fn drop_without_stop_is_sound() {
         let src = CpalSource::new();
         drop(src);
+    }
+
+    #[test]
+    fn downmix_frame_multichannel_and_mono() {
+        // моно passthrough
+        assert_eq!(downmix_frame(&[0.42]), 0.42);
+        // [0.0, 0.5] -> 0.25 (например, инструмент во 2-м канале)
+        assert_eq!(downmix_frame(&[0.0, 0.5]), 0.25);
+        // [0.25, -0.25] -> 0.0
+        assert_eq!(downmix_frame(&[0.25, -0.25]), 0.0);
+        // пустой -> 0.0
+        assert_eq!(downmix_frame(&[]), 0.0);
     }
 }
