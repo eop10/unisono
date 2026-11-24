@@ -47,6 +47,7 @@ import {
 import { loadPresets, deletePreset as removePreset } from '../src/stores/customs';
 import {
   listening,
+  resetPlatformCache,
   resetVibrateThrottle,
   selectString,
   startListening,
@@ -57,6 +58,7 @@ import { customs } from '../src/stores/customs';
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  resetPlatformCache();
   resetVibrateThrottle();
   settings.set({ ...DEFAULT_SETTINGS });
   customs.set([]);
@@ -398,6 +400,7 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
     });
 
     it('refines channel nopermission to error if hasMicPermission is true', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
       let messageHandler: ((s: TunerState) => void) | undefined;
       vi.mocked(ipc.startListening).mockImplementationOnce(async (channel: unknown) => {
         messageHandler = (channel as Channel<TunerState>).onmessage;
@@ -418,6 +421,52 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(get(tuner).kind).toBe('error');
+    });
+
+    it('keeps nopermission on desktop when ipcStart fails with permissionDenied and does not call hasMicPermission', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('desktop');
+      vi.mocked(ipc.startListening).mockRejectedValueOnce({ kind: 'permissionDenied' });
+      await startListening();
+      expect(get(listening)).toBe(false);
+      expect(get(tuner).kind).toBe('nopermission');
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(get(tuner).kind).toBe('nopermission');
+      expect(ipc.hasMicPermission).not.toHaveBeenCalled();
+    });
+
+    it('keeps nopermission on desktop when channel emits nopermission and does not call hasMicPermission', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('desktop');
+      let messageHandler: ((s: TunerState) => void) | undefined;
+      vi.mocked(ipc.startListening).mockImplementationOnce(async (channel: unknown) => {
+        messageHandler = (channel as Channel<TunerState>).onmessage;
+      });
+      await startListening();
+      messageHandler!({
+        kind: 'nopermission',
+        cents: null,
+        clarity: 0,
+        db: -60,
+        f0: null,
+        noteMidi: null,
+        stringIndices: [],
+        targetHz: null,
+      });
+      expect(get(tuner).kind).toBe('nopermission');
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(get(tuner).kind).toBe('nopermission');
+      expect(ipc.hasMicPermission).not.toHaveBeenCalled();
+    });
+
+    it('caches platform after first startListening call', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
+      await startListening();
+      expect(ipc.getPlatform).toHaveBeenCalledTimes(1);
+
+      // Subsequent startListening call reuses cached platform
+      await startListening();
+      expect(ipc.getPlatform).toHaveBeenCalledTimes(1);
     });
 
     it('clears screen flag when stopped', async () => {

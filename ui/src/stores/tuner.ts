@@ -14,6 +14,7 @@ import {
   startListening as ipcStart,
   stopListening as ipcStop,
   vibrate,
+  type Platform,
 } from '../ipc/commands';
 import { settings } from './settings';
 
@@ -33,6 +34,11 @@ export const listening = writable(false);
 
 let prevKind: TunerKind = 'silent';
 let lastVibrateAt = 0;
+let platformCache: Platform | null = null;
+
+export function resetPlatformCache(): void {
+  platformCache = null;
+}
 
 export function resetVibrateThrottle(): void {
   lastVibrateAt = 0;
@@ -59,8 +65,11 @@ function audioErrorState(err: unknown): TunerState {
   return { ...SILENT, kind };
 }
 
-/** Уточнение ошибки доступа: если фактически разрешение есть, значит сбой устройства (rev 5.1). */
+/** Уточнение ошибки доступа: только Android (rev 5.2). Если фактически разрешение есть, значит сбой устройства. */
 function refinePermissionError(): void {
+  if (platformCache !== 'android') {
+    return;
+  }
   void hasMicPermission()
     .then((hasPerm) => {
       if (hasPerm && get(tuner).kind === 'nopermission') {
@@ -72,8 +81,10 @@ function refinePermissionError(): void {
 
 export async function startListening(): Promise<void> {
   try {
-    const platform = await getPlatform();
-    if (platform === 'android') {
+    if (platformCache === null) {
+      platformCache = await getPlatform();
+    }
+    if (platformCache === 'android') {
       await requestMic();
     }
   } catch (e) {

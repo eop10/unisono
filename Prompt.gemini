@@ -1,4 +1,4 @@
-# Задача для Gemini 3.8 Flash в Antigravity: rev 5.1 — правки ревью этапа 5
+# Задача для Gemini 3.8 Flash в Antigravity: rev 5.2 — горячая правка регрессии nopermission на desktop
 
 Ты работаешь в существующем репозитории **Unisono** (Rust + Tauri 2 + Svelte 5).
 Открой папку проекта в Antigravity и работай в режиме агента: читай файлы, правь код
@@ -6,74 +6,45 @@
 
 - Репозиторий: https://github.com/eop10/unisono
 - Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
-- Последний запушенный коммит — `064858a`; поверх него локально лежит только этот файл
+- Последний запушенный коммит — `e4f3468`; поверх него локально лежит только этот файл
   (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
-- Этап 5 реализован и принят по коду; это точечная правка по ревью (**rev 5.1**).
-  Не начинать этап 6; не менять подпись, манифест, DSP.
+- Это точечная правка регрессии, найденной на ревью rev 5.1 (**rev 5.2**).
+  Не начинать этап 6; Rust-код, Kotlin-плагин и команды не трогать.
 
 ## 0. Прочитай перед началом
 
-1. `crates/tuner-audio/src/oboe.rs` — `map_oboe_error` (правишь смысл классификации).
-2. `src-tauri/gen/android/app/src/main/java/app/unisono/tuner/MicPlugin.kt`.
-3. `src-tauri/src/commands.rs` — `platform`/`request_mic`/`keep_screen_on`/`vibrate`.
-4. `ui/src/stores/tuner.ts` — поток состояний, `isPermissionDenied`, `audioErrorState`.
-5. `ui/tests/stores.test.ts` — тесты android-веток.
+1. `ui/src/stores/tuner.ts` — `refinePermissionError`, `startListening`, `audioErrorState`.
+2. `ui/tests/stores.test.ts` — android-ветки (`refines nopermission…`, `keeps nopermission…`).
+3. `src-tauri/src/commands.rs` — `has_mic_permission`: на desktop заглушка возвращает `Ok(true)`.
 
-## 1. Контекст ревью (что подтверждено и что чиним)
+## 1. Контекст: регрессия rev 5.1
 
-Подтверждено: oboe-захват, манифест без `INTERNET` (дамп APK: только `RECORD_AUDIO`,
-`VIBRATE`), Kotlin-плагин, lifecycle, подпись из env (release без env падает с понятной
-ошибкой — `BUILD FAILED`), `versionCode 1000`/`versionName 0.1.0`, native-code
-arm64-v8a + armeabi-v7a, CI зелёный.
+`refinePermissionError()` в `tuner.ts` при состоянии `nopermission` запрашивает
+`hasMicPermission()` и при `true` перезаписывает состояние на `error` («сбой устройства»).
+На **desktop** команда `has_mic_permission` — заглушка `Ok(true)`, поэтому **любой отказ
+TCC на macOS** (принятые п. 6/п. 7 этапа 4: экран NoPermission → «Перейти в настройки»)
+теперь превращается в экран «сбой устройства». Тесты rev 5.1 покрывают только
+android-ветки — desktop-кейс не проверен.
 
-Чинится в rev 5.1:
+Уточнение по смыслу верное только для Android: там нет способа отличить отказ
+разрешения от занятого устройства иначе.
 
-- **P1.** `oboe::map_oboe_error` маппит `Unavailable | Internal → PermissionDenied`.
-  На прошивках занятый/недоступный микрофон даёт те же ошибки — пользователь увидит
-  экран «нет разрешения» вместо «сбой устройства». Нужно после классификации уточнять
-  фактический статус разрешения.
-- **P2.** Вибрация на каждом переходе в «в строе» без троттлинга: при дребезге
-  intune↔above (каждые ~250 мс) вибратор молотит. Нужен минимальный интервал.
-- **P2.** Зеркало этапа и гигиена: чекбокс подписи не отмечен, в
-  `gen/android/app/build/outputs/.../release/` лежит устаревший
-  `app-universal-release-unsigned.apk` от сборки до коммита подписи (build-каталог
-  gitignore-нут — в индексе чисто).
+## 2. Part 1 — правка (только UI)
 
-Правила: `docs/`, `brand/`, `design/` не трогать; DSP-формулы и контракт
-`PitchDetector` не менять; `unsafe` только в `tuner-audio`; keystore не запрашивать.
-Коммит после каждой части; push в конце. Гейт упал — стоп, команда/вывод/файл в чат.
-Первый коммит включает этот файл.
-
-## 2. Part 1 — классификация ошибки микрофона (P1)
-
-1. `MicPlugin.kt`: новая команда
-   ```kotlin
-   @Command
-   fun hasMicPermission(invoke: Invoke) {
-       invoke.resolve(
-           ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)
-               == PackageManager.PERMISSION_GRANTED
-       )
-   }
-   ```
-   (без диалога, только чтение статуса).
-2. `src-tauri/src/commands.rs`: команда
-   `pub fn has_mic_permission(app: AppHandle) -> Result<bool, String>` — на Android
-   через `run_mobile_plugin::<bool>("hasMicPermission", ())`, на desktop — `Ok(true)`.
-   Зарегистрировать в `invoke_handler`.
-3. `ui/src/ipc/commands.ts`: обёртка `hasMicPermission(): Promise<boolean>`.
-4. `ui/src/stores/tuner.ts`: когда приходит `permissionDenied` (в catch после
-   `ipcStart`) или состояние `nopermission` из канала — **асинхронно** один раз
-   запросить `hasMicPermission()`:
-   - `false` → как сейчас: экран `NoPermission` («Перейти в настройки»);
-   - `true` → перезаписать состояние на **Error** («сбой устройства», тексты
-     `error_title`/`error_text` уже есть): разрешение на месте, значит ошибка потока.
-   Не блокировать обработку состояний; гонки гасить проверкой, что состояние всё ещё
-   `nopermission` в момент ответа.
-5. `oboe.rs`: обновить комментарий `map_oboe_error` — классификация
-   `Unavailable|Internal` остаётся, но теперь её уточняет UI-проверка статуса.
-6. Тесты (`ui/tests/stores.test.ts`): при mock `hasMicPermission → true` экран
-   **Error**, при `false` — **NoPermission**; существующие тесты не ломать.
+1. `ui/src/stores/tuner.ts`:
+   - кэшировать платформу в модуле: при первом `startListening()` сохранить результат
+     `getPlatform()` (например, `let platformCache: Platform | null = null`), повторные
+     вызовы кэш используют;
+   - `refinePermissionError()` — ранний выход (no-op), если платформа не `'android'`.
+     На desktop состояние `nopermission` остаётся как есть.
+2. `ui/tests/stores.test.ts`:
+   - **регрессионный тест**: платформа `desktop`, из канала приходит `nopermission` →
+     состояние остаётся `nopermission`, `hasMicPermission` **не вызывается**;
+   - аналогично для catch-пути `startListening` (ошибка `permissionDenied` на desktop);
+   - android-кейсы (true → error, false → nopermission) не ломать — обновить моки под
+     кэш платформы (сброс кэша между тестами: экспортировать `resetPlatformCache()` или
+     сбрасывать в `beforeEach`).
+3. Комментарий у `refinePermissionError` дополнить: «только Android (rev 5.2)».
 
 Гейт:
 
@@ -82,65 +53,22 @@ npm --prefix ui run check
 npm --prefix ui run test
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
-export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
-export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
-cargo check -p app --target aarch64-linux-android
-```
-
-Коммит: `android: distinguish permission from device errors via has_mic_permission (rev 5.1)`
-
-## 3. Part 2 — троттлинг вибрации (P2)
-
-`ui/src/stores/tuner.ts`: вибрация на переходе в `intune` — не чаще одного раза
-в **1000 мс** (модульная метка `lastVibrateAt`). Тест: два быстрых перехода в `intune`
-подряд → ровно один вызов `vibrate()`; после паузы > 1 с — снова вибрирует.
-Гейт: `npm --prefix ui run check && npm --prefix ui run test`.
-Коммит: `ui: throttle in-tune vibration (rev 5.1)`
-
-## 4. Part 3 — зеркало и гигиена (P2)
-
-1. `.github/issues/05-android.md`: отметить `[x]` «Настройка `signingConfigs.release`
-   из env» (факт подтверждён: release без env падает); пункт «Тесты на Android 8 и 14;
-   sideload-инструкция в README» переформулировать: README — сделано (`[x]` в части
-   README), тесты на устройствах — остаются ручными (отдельный невыполненный пункт).
-2. Удалить локальный устаревший артефакт
-   `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`
-   (сборка до коммита подписи; build-каталог в `.gitignore`, в индекс не попадает).
-   Не пересобирать release без env — падение уже проверено.
-Коммит: `chore: track stage-5 items and drop stale unsigned apk (rev 5.1)`
-
-## 5. Part 4 — гейты, пуш, отчёт
-
-Полные гейты (повторить после всех правок):
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-npm --prefix ui run check
-npm --prefix ui run test
-npm --prefix ui run build
-cargo check -p app --target aarch64-linux-android   # env выше
-cargo check -p app --target armv7-linux-androideabi # env выше (armv7a-linux-androideabi26-clang)
-npm run tauri android build -- --apk --target aarch64 --target armv7   # debug
 ```
 
-Затем:
+Коммит (включая этот файл промпта):
+`ui: refine nopermission only on android (rev 5.2)`
+
+## 3. Part 2 — пуш, CI, отчёт
 
 ```bash
 git push origin main
 gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
-Отчёт в чат и коротко в issue #6: коммиты; вывод гейтов; номер зелёного CI-run; какой
-APK собран (путь). Ручная приёмка на Android 8/14 — после, владельцем.
+Отчёт в чат и коротко в issue #6: что изменено, вывод гейтов, номер зелёного CI-run.
 
-## 6. Что НЕ делать
+## 4. Что НЕ делать
 
-- Не трогать `docs/`, `brand/`, `design/`, DSP-формулы, контракт `PitchDetector`,
-  манифест, конфиг подписи.
-- Не запрашивать keystore/пароли; не собирать release без env.
-- Не начинать этап 6 (#12, #13), не публиковать релиз 0.1.0.
+- Не трогать Rust, Kotlin-плагин, манифест, подпись, docs/, brand/, design/.
+- Не начинать этап 6 (#12, #13); не менять версию 0.1.0.
