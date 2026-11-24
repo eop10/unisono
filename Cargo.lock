@@ -4853,6 +4853,7 @@ dependencies = [
  "cpal",
  "objc2",
  "objc2-av-foundation",
+ "oboe",
  "rtrb",
  "serde",
  "serde_json",

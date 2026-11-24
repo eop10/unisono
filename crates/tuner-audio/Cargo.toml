@@ -16,6 +16,9 @@ tuner-core = { path = "../tuner-core" }
 [target.'cfg(not(target_os = "android"))'.dependencies]
 cpal = "0.15"
 
+[target.'cfg(target_os = "android")'.dependencies]
+oboe = "0.6.1"
+
 # TCC-статус микрофона через AVFoundation: cpal/CoreAudio при отказе
 # отдаёт тишину вместо ошибки (7.2.1), спрашиваем явно.
 [target.'cfg(target_os = "macos")'.dependencies]

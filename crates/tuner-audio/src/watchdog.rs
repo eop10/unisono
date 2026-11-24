@@ -502,7 +502,10 @@ mod tests {
         }
 
         assert!(capture.is_listening(), "данные идут — попытки сбрасываются");
-        assert!(reopens_seen >= 2, "было переоткрытие (фактически: {reopens_seen})");
+        assert!(
+            reopens_seen >= 2,
+            "было переоткрытие (фактически: {reopens_seen})"
+        );
         capture.stop();
         assert!(!capture.is_listening());
     }

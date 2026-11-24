@@ -120,21 +120,20 @@ pub fn spawn_analyzer(
         .expect("не удалось создать поток анализа")
 }
 
-#[cfg(target_os = "android")]
-mod android_stub;
 #[cfg(not(target_os = "android"))]
 mod cpal_source;
+#[cfg(target_os = "android")]
+mod oboe;
 pub mod tcc;
 pub mod watchdog;
 
 pub use watchdog::{StateSink, SupervisedCapture, WatchdogConfig};
 
-#[cfg(target_os = "android")]
-pub use android_stub::StubSource as PlatformSource;
-/// Бэкенд по умолчанию для desktop-платформ (7.0); Android до этапа 5 —
-/// заглушка, чтобы сборка и CI не падали (см. `android_stub`).
+/// Бэкенд по умолчанию для desktop-платформ (7.0); Android — oboe (этап 5, 7.1.2).
 #[cfg(not(target_os = "android"))]
 pub use cpal_source::CpalSource as PlatformSource;
+#[cfg(target_os = "android")]
+pub use oboe::OboeSource as PlatformSource;
 
 #[cfg(test)]
 mod tests {
