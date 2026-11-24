@@ -99,7 +99,8 @@ docs/                      # спецификация
 
 ## 8. Версии и ключи
 
-- Версия стартует с `0.1.0`; в Android — `versionCode 1`; каждый релиз +1.
+- Версия стартует с `0.1.0`; в Android `versionCode` вычисляет Tauri из semver
+  (`0.1.0` → `1000`, см. `gen/android/app/tauri.properties`); каждый релиз растёт автоматически.
 - Android-keystore создан владельцем и в репозитории отсутствует. Сборка release APK —
   локально, через переменные окружения `UNISONO_KEYSTORE`, `UNISONO_STORE_PASSWORD`,
   `UNISONO_KEY_ALIAS`, `UNISONO_KEY_PASSWORD`. Не запрашивать ключ и пароли.
