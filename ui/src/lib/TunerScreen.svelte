@@ -60,7 +60,7 @@
     if (inField) return;
     const sheetOpen = get(overlay) !== null;
 
-    if (e.code === 'Space') {
+    if (e.code === 'Space' || e.key === ' ') {
       // Space — глобальный старт/стоп (6.7, rev 6.3).
       if (e.repeat || sheetOpen) return;
       e.preventDefault();
