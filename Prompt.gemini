@@ -1,4 +1,4 @@
-# Задача для Gemini 3.8 Flash в Antigravity: зелёный CI и приёмка этапа 4B
+# Задача для Gemini 3.8 Flash в Antigravity: rev 4.1 — per-arch DMG вместо Universal
 
 Ты работаешь в существующем репозитории **Unisono** (мультиинструментальный тюнер,
 Rust + Tauri 2 + Svelte 5). Открой папку проекта в Antigravity и работай в режиме агента:
@@ -6,261 +6,279 @@ Rust + Tauri 2 + Svelte 5). Открой папку проекта в Antigravit
 
 - Репозиторий: https://github.com/eop10/unisono
 - Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
-- Последний запушенный коммит — `0f13156`; поверх него локально лежит только этот файл
+- Последний запушенный коммит — `877695c`; поверх него локально лежит только этот файл
   (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
-- Этапы 0–4B реализованы. Задача — **не начинать этап 5 (Android/oboe)**, а довести 4B
-  до зелёного CI и приёмки. Промпт на этап 5 будет отдельно.
+- Этапы 0–4B реализованы. Это точечная правка упаковки macOS (**rev 4.1**) по результату
+  ручной приёмки 4B. **Не начинай этап 5 (Android/oboe)** — промпт на него будет отдельно.
 
 ## 0. Прочитай перед началом
 
 1. `HANDOFF.md` — правила, версии, ключи.
-2. `docs/source/03_architecture.md` §3.5–3.7.
-3. `docs/source/05_data.md` §5.1–5.8 — формат хранения.
-4. `docs/source/06_ui.md` §6.3–6.9 — экран, листы, меню, хоткеи.
-5. `docs/source/07_platform.md` §7.2.1–7.2.3 — cpal, TCC, DMG.
-6. `docs/source/08_build_test.md` §8.6 — релизный чек-лист macOS.
+2. `docs/source/07_platform.md` §7.2.2–7.2.3 — TCC и дистрибуция macOS (будешь править).
+3. `docs/source/08_build_test.md` §8.1 (таблица сборок), §8.4 (CI), §8.6 (чек-лист релиза).
+4. `scripts/build-macos.sh` — текущий universal-скрипт (полностью заменишь).
 
-`docs/`, `brand/`, `design/` **не трогать**. Документация — Sphinx-проект; правки только
-по отдельному разрешению владельца.
+## 1. Контекст: диагноз приёмки 4B
 
-## 1. Что уже проверено (не переделывать)
+Факты, зафиксированные владельцем вручную на macOS 27.2.1 / Apple M5 (arm64):
 
-На macOS локально зелёные:
+- **Universal-DMG** (fat x86_64+arm64, ad-hoc): системный запрос микрофона при
+  **каждом** запуске — грант TCC не сохраняется.
+- **aarch64-сборка**: запрос один раз при первом запуске, дальше тихо; Unisono
+  появляется в «Системные настройки → Конфиденциальность и безопасность → Микрофон».
+- Известный паттерн: tauri-apps/tauri#8041 (в комментариях то же у Electron) —
+  macOS/TCC не сохраняет разрешение микрофона для universal ad-hoc бинарников.
+  Уровень ОС, не наш баг; на одинарной архитектуре всё корректно.
 
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace          # 103 passed, 0 failed
-npm --prefix ui run check       # 0 errors, 0 warnings
-npm --prefix ui run test        # 43 passed
-npm --prefix ui run build
-cargo check -p app --target aarch64-linux-android   # см. env в 2.2
-npm run tauri build -- --debug --bundles app
-```
+Решение владельца: **два per-arch DMG** (`aarch64` — Apple Silicon, `x86_64` — Intel);
+Universal убрать из сборки, CI, README и документации. Код приложения **не меняется**.
 
-`.app` собирается: `Info.plist` содержит `NSMicrophoneUsageDescription`,
-`LSMinimumSystemVersion = 12.0`, подпись ad-hoc с runtime, `Info.plist entries=17`.
+Правила rev 4.1:
 
-**CI красный** на `0f13156` (run `45221611518`): job `rust` на Ubuntu падает на
-`unused imports` в `src-tauri/src/menu.rs:6`; из-за этого `android` и `desktop` даже
-не запускались. Логи:
+- Код не трогать: `crates/`, `src-tauri/src/`, `ui/src/` — без изменений. Правки только
+  в `scripts/build-macos.sh`, `.github/workflows/ci.yml`, `README.md`,
+  `.github/issues/04-macos.md`, `.github/issues/07-release.md` и восьми файлах
+  `docs/source/` из Part 2.
+- `docs/` править **только** в перечисленных в Part 2 файлах — разрешение владельца
+  получено. Остальные `docs/`, `brand/`, `design/`, история промптов (`Prompt.glm`)
+  не трогать.
+- Не запрашивать keystore/пароли; notarization и Developer ID не делать; Windows/Linux
+  не собирать; версию 0.1.0 не менять; этап 5 не начинать.
+- Артефакты прошлых сборок в `target/` (`universal-apple-darwin`, `release`) — мусор,
+  не удалять специально, новый скрипт в них не пишет.
+- Первый коммит Part 1 включает и этот файл промпта (он лежит в дереве незакоммиченным).
+- Если гейт падает — остановись, не обходи проверку и не помечай её «ошибкой окружения»;
+  напиши в чат команду, вывод и файл.
 
-```
-error: unused imports: `AboutMetadata` and `SubmenuBuilder`
- --> src-tauri/src/menu.rs:6
-```
+## 2. Part 1 — `scripts/build-macos.sh`: per-arch сборка
 
-## 2. Part 0 — сделать CI зелёным (P0, первым делом)
-
-### 2.1. Исправить импорты меню
-
-`src-tauri/src/menu.rs`:
-
-```rust
-use tauri::menu::{MenuBuilder, MenuItem};
-#[cfg(target_os = "macos")]
-use tauri::menu::{AboutMetadata, SubmenuBuilder};
-```
-
-`AboutMetadata` и `SubmenuBuilder` используются только в `#[cfg(target_os = "macos")]`,
-поэтому на Linux/Windows они должны импортироваться под тем же cfg. Больше ничего
-в меню не менять.
-
-### 2.2. Проверить Android локально
-
-NDK и targets уже установлены:
+Полностью заменить содержимое файла на:
 
 ```bash
-export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
-export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
-export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
-cargo check -p app --target aarch64-linux-android
-```
+#!/usr/bin/env bash
+# Per-arch DMG для macOS (docs/source/07_platform.md §7.2.2–7.2.3, 08_build_test.md §8.6).
+# Собирает app+dmg отдельно для aarch64 и x86_64, проверяет оба бандла и пишет SHA-256.
+# Падает на первой непрошедшей проверке (set -euo pipefail).
+#
+# Universal не используем (rev 4.1, приёмка 4B): macOS/TCC не сохраняет разрешение
+# микрофона для universal ad-hoc бинарников — системный запрос при каждом запуске.
+# На одинарной архитектуре грант персистится.
 
-Должно быть без ошибок. Если появились новые — чинить, а не отключать job.
+set -euo pipefail
 
-### 2.3. Пуш и наблюдение за CI
+# В headless/скриптовом окружении Finder AppleScript виснет (-1712); CI=true
+# включает --skip-jenkins в bundle_dmg.sh.
+export CI="${CI:-true}"
 
-```bash
-git add -A && git commit -m "stage-4B: fix non-macOS menu imports (CI)"
-git push origin main
-gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
-```
+cd "$(dirname "$0")/.."
+ROOT="$(pwd)"
 
-Ждать все четыре job: `rust`, `ui`, `desktop`, `android`. Если `desktop` упадёт на
-universal-сборке — смотреть лог, чинить, пушить снова. Не переходить к Part 1,
-пока `rust` не зелёный.
+echo "==> Зависимости"
+npm ci
+npm --prefix ui ci
 
-## 3. Part 1 — правки по ревью 4B
+echo "==> Rust-таргеты per-arch"
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-Делать по одной, коммит после каждой логической группы.
-
-### 3.1. Опечатка в копирайте (P1)
-
-В `NOTICE` правильно: **Егор Присяжный**. В двух местах опечатка «Присажный»:
-
-- `src-tauri/Info.plist` (`NSHumanReadableCopyright`);
-- `src-tauri/src/menu.rs` (`AboutMetadata.copyright`).
-
-Исправить на «© 2026 Егор Присяжный. Apache-2.0». Проверить:
-
-```bash
-grep -R "Присажный" -n src-tauri README.md NOTICE || true
-```
-
-### 3.2. Экран `NoPermission`: нет способа повторить после выдачи доступа (P1)
-
-`ui/src/lib/TunerScreen.svelte` (ветка `st.kind === 'nopermission'`) показывает только
-«Открыть настройки». Пользователь выдаёт доступ и возвращается — приложение само не
-перезапускает захват, видимой кнопки «Повторить» нет.
-
-Добавить вторую кнопку: «Повторить» (`t(lang, 'retry')`, ключ уже есть) →
-`void startListening()`, и оставить «Открыть настройки». Расположить основную
-(«Повторить») первой, вторичную — рядом/ниже. Добавить/поправить тест в
-`ui/tests/components.test.ts`: на `nopermission` есть кнопка retry и клик вызывает
-`startListening`.
-
-### 3.3. `start_listening`/`stop_listening` не должны блокировать главный поток (P1)
-
-Системный запрос TCC (`AVCaptureDevice.requestAccess`) может ждать ответа
-пользователя неограниченно. Сейчас синхронная команда `start_listening` доходит до
-этого ожидания, а в Tauri синхронные команды выполняются на главном потоке — окно
-может зависнуть на время диалога.
-
-Сделать обе команды асинхронными и вынести блокирующую работу в
-`tauri::async_runtime::spawn_blocking`:
-
-```rust
-use tauri::Manager; // для app.state()
-
-#[tauri::command]
-pub async fn start_listening(
-    app: tauri::AppHandle,
-    channel: Channel<TunerState>,
-) -> Result<(), AudioError> {
-    let sink = crate::bridge::channel_sink(channel);
-    tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().start_capture(sink)
-    })
-    .await
-    .map_err(|e| AudioError::Stream(format!("поток запуска упал: {e}")))?
+# Проверки одного бандла: $1 — .app, $2 — .dmg.
+check_bundle() {
+  # Разрешение микрофона обязано быть в Info.plist (7.2.2).
+  # Без -q: grep читает весь вывод, иначе plutil/codesign ловят SIGPIPE (pipefail).
+  plutil -p "$1/Contents/Info.plist" | grep NSMicrophoneUsageDescription >/dev/null
+  plutil -p "$1/Contents/Info.plist" | grep '"LSMinimumSystemVersion" => "12.0"' >/dev/null
+  # Целостность подписи и Info.plist entries (7.2.3, ревью 3.6).
+  codesign --verify --deep --strict "$1"
+  codesign -dv "$1" 2>&1 | grep "Info.plist entries=" >/dev/null
+  codesign -dv "$1" 2>&1 | grep adhoc >/dev/null
+  hdiutil verify "$2"
 }
 
-#[tauri::command]
-pub async fn stop_listening(app: tauri::AppHandle) {
-    let _ = tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().stop();
-    })
-    .await;
-}
+declare -a BUILT=()
+
+for TARGET in aarch64-apple-darwin x86_64-apple-darwin; do
+  echo "==> Сборка $TARGET (app + dmg)"
+  npm run tauri build -- --target "$TARGET"
+
+  BUNDLE="$ROOT/target/$TARGET/release/bundle"
+  APP="$BUNDLE/macos/Unisono.app"
+  shopt -s nullglob
+  dmgs=( "$BUNDLE/dmg"/Unisono_*.dmg )
+  if (( ${#dmgs[@]} != 1 )); then
+    echo "ожидался один DMG для $TARGET, найдено: ${#dmgs[@]}" >&2
+    exit 1
+  fi
+  DMG="${dmgs[0]}"
+
+  echo "==> Проверки бандла $TARGET"
+  check_bundle "$APP" "$DMG"
+  BUILT+=( "$DMG" )
+done
+
+echo "==> SHA-256"
+mkdir -p "$ROOT/dist"
+shasum -a 256 "${BUILT[@]}" | tee "$ROOT/dist/SHA256SUMS"
+
+echo "==> Готово:"
+printf '  %s\n' "${BUILT[@]}"
 ```
 
-Сигнатуру JS-обёрток (`ui/src/ipc/commands.ts`) не менять — `invoke` одинаков.
-Проверить, что UI-тесты и `svelte-check` зелёные, а приложение стартует.
+Ожидаемые имена: `Unisono_0.1.0_aarch64.dmg` и `Unisono_0.1.0_x86_64.dmg`
+(Tauri суффиксирует по таргету; проверять количеством, не жёстким именем).
 
-### 3.4. Валидация пресета при сохранении (P2)
+Гейт:
 
-`crates/tuner-storage/src/lib.rs`, `save_presets`: сейчас проверяются только струны,
-а `load_presets` — ещё имя/ID/инструмент. Пресет с пустым именем сохранится и молча
-исчезнет после перезапуска.
+```bash
+bash scripts/build-macos.sh
+plutil -p target/aarch64-apple-darwin/release/bundle/macos/Unisono.app/Contents/Info.plist | grep NSMicrophoneUsageDescription
+plutil -p target/x86_64-apple-darwin/release/bundle/macos/Unisono.app/Contents/Info.plist | grep NSMicrophoneUsageDescription
+wc -l dist/SHA256SUMS   # ожидается 2
+```
 
-Использовать существующий `PresetRecord::is_valid()` **и** проверку инструмента
-по реестру перед записью; ошибка — `StoreError::InvalidPreset { id, reason }`.
-Тест: `save_presets` с пустым именем и с `id` без префикса `custom.` возвращает
-`InvalidPreset`, файл не создан.
+Коммит (включая `Prompt.gemini`): `build: per-arch macOS DMGs instead of universal (rev 4.1)`
 
-### 3.5. Файл от более новой схемы не перезаписывать (P2)
+## 3. Part 2 — README, зеркала issues и docs (разрешение владельца получено)
 
-`docs/source/05_data.md` §5.8.3: если `schema_version` больше текущей — читаем
-известные поля, **файл не перезаписываем**. Сейчас `load_settings` возвращает данные,
-а первое же изменение в UI (debounce 300 мс) перезапишет файл версией 2.
+Точечные замены. Формулировки можно слегка полировать, смысл — как указано.
 
-- В `Store` добавить `settings_read_only: AtomicBool`.
-- `load_settings`: `version > SCHEMA_VERSION` → флаг `true`, иначе `false`.
-- `save_settings`: при флаге вернуть `StoreError::NewerSchema { found, current }`
-  и **не писать** файл.
-- Тест: записать `schema_version: 99`, загрузить, `save_settings(default)` → `Err`,
-  содержимое файла не изменилось; обычный файл сохраняется как раньше.
-- В bridge ошибка уже логируется (`log::warn!`) — UI не ронять.
+### 3.1. README.md
 
-### 3.6. `scripts/build-macos.sh`: проверки и glob (P2)
+- строка «| macOS 12+ | Universal DMG | без нотаризации: первый запуск через
+  «Всё равно открыть» |» → «| macOS 12+ | DMG per-arch (aarch64 / x86_64) | без
+  нотаризации: первый запуск через «Всё равно открыть» |»
 
-1. `DMG="$(ls ... | head -n 1)"` может упасть из-за `pipefail`/SIGPIPE. Заменить на glob:
-   ```bash
-   shopt -s nullglob
-   dmgs=( "$DMG_DIR"/Unisono_*_universal.dmg )
-   if (( ${#dmgs[@]} != 1 )); then
-     echo "ожидался один Universal DMG, найдено: ${#dmgs[@]}" >&2
-     exit 1
-   fi
-   DMG="${dmgs[0]}"
-   ```
-2. `grep adhoc` проходит и для linker-signed бинарника. Добавить настоящие проверки:
-   ```bash
-   codesign --verify --deep --strict "$APP"
-   codesign -dv "$APP" 2>&1 | grep "Info.plist entries=" >/dev/null
-   ```
-   `grep` без `-q`: с `pipefail` ранний выход `grep -q` даёт SIGPIPE `codesign`.
-3. Прогнать скрипт целиком (может занять 15–25 минут):
-   ```bash
-   bash scripts/build-macos.sh
-   ```
-   В отчёт — путь к DMG и `dist/SHA256SUMS`. Если universal-сборка падает —
-   чинить, не подменять на host-only.
+### 3.2. Зеркала issues
 
-### 3.7. Мелкая чистка (P3, можно одним коммитом)
+- `.github/issues/04-macos.md`: «собрать Universal DMG без нотаризации» →
+  «собрать per-arch DMG (aarch64, x86_64) без нотаризации»; чекбокс «Universal DMG +
+  ad-hoc подпись…» → «Per-arch DMG (aarch64, x86_64) + ad-hoc подпись…»
+- `.github/issues/07-release.md`: «macOS: Universal DMG, ad-hoc подпись.» →
+  «macOS: per-arch DMG (aarch64, x86_64), ad-hoc подпись.»
 
-- `ui/src/lib/types.ts`: комментарий у `onboardingDone` противоречив
-  («в файле, не в DTO — нет, ходит через DTO»). Заменить на
-  «UI не показывает; сохраняется в settings.json (5.3)».
-- `crates/tuner-core/src/engine.rs` (doc-комментарий модуля): `Error`/`NoPermission`
-  теперь приходят не только из bridge, но и из watchdog (`tuner-audio`). Уточнить
-  формулировку, код не менять.
+### 3.3. docs/source/07_platform.md (§7.2.3)
 
-### 3.8. Отзыв разрешения в рантайме — проверить, не додумывать (P1, ручная проверка)
+- «Основной путь для 1.0: **Universal DMG без нотаризации**…» → «Основной путь
+  для 1.0: **per-arch DMG без нотаризации** — `aarch64` (Apple Silicon) и `x86_64`
+  (Intel) отдельными файлами, раздача через GitHub Releases.»
+- Сразу после добавить абзац-обоснование: «Universal-бандл не используется (rev 4.1,
+  приёмка 4B): macOS не сохраняет разрешение микрофона (TCC) для universal ad-hoc
+  бинарников — системный запрос появляется при каждом запуске. На одинарной
+  архитектуре грант сохраняется (проверено владельцем на macOS 27/arm64;
+  ср. tauri-apps/tauri#8041).»
+- Блок команд «Сборка и ad-hoc подпись» заменить на:
 
-Сценарий: приложение слушает → «Системные настройки → Конфиденциальность → Микрофон»
-→ выключить Unisono. Если macOS рвёт поток/перестаёт отдавать кадры, watchdog
-переоткроет устройство, `ensure_mic_permission` вернёт `PermissionDenied`, UI покажет
-`NoPermission` — всё уже работает, **код не трогать**.
+```bash
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+bash scripts/build-macos.sh   # обе сборки, проверки бандлов, dist/SHA256SUMS
+```
 
-Если же UI остаётся на «Слушаю…» (macOS отдаёт тишину), добавить в наблюдатель
-(`crates/tuner-audio/src/watchdog.rs`) периодическую проверку `crate::tcc::mic_status()`
-раз в ~2 с: `Denied` → остановить поток, `listening = false`, отправить
-`error_state(Some(AudioError::PermissionDenied))`. Проверку делать только на macOS
-(на остальных `mic_status()` возвращает `Authorized`), без `unsafe` в `tuner-core`.
+- В абзаце про `codesign -s -` уточнить: ad-hoc подпись ставит сам Tauri при сборке,
+  ручная подпись не нужна; остальной смысл абзаца (Gatekeeper, «повреждено») оставить.
 
-В отчёте явно написать, какой из двух вариантов наблюдался.
+### 3.4. docs/source/08_build_test.md
 
-## 4. Part 2 — ручная приёмка 4B (владелец, не агент)
+- Строка таблицы «| DMG (Universal) | `npm run tauri build -- --target
+  universal-apple-darwin` |» → две строки:
+  «| DMG (aarch64) | `npm run tauri build -- --target aarch64-apple-darwin` |»
+  «| DMG (x86_64) | `npm run tauri build -- --target x86_64-apple-darwin` |»
+- «CI собирает **неподписанные** артефакты: Universal DMG без notarization и debug
+  APK.» → «…: per-arch DMG (aarch64, x86_64) без notarization и debug APK.»
+- Чек-лист 8.6, п. 3: «Собран Universal DMG (`--target universal-apple-darwin`),
+  `.app` подписан ad-hoc.» → «Собраны per-arch DMG (`aarch64` и `x86_64`), `.app`
+  подписан ad-hoc.»
+- Чек-лист 8.6, п. 6: «Установка с нуля на Apple Silicon и Intel: DMG открывается…» →
+  «Установка с нуля на Apple Silicon (`Unisono_*_aarch64.dmg`) и Intel
+  (`Unisono_*_x86_64.dmg`): DMG открывается, приложение запускается после
+  «Всё равно открыть», микрофон работает.»
 
-Агент **не может** нажимать системные диалоги и играть на инструменте. Собрать
-артефакты, подготовить чек-лист и попросить владельца подтвердить. Не писать
-«проверено», если проверял не человек.
+### 3.5. docs/source/02_requirements.md
 
-Чек-лист:
+- НФТ-09: «macOS 12+ (Universal)» → «macOS 12+ (aarch64 и x86_64, per-arch DMG)»
+- Критерии 2.6: «Universal DMG» → «per-arch DMG (aarch64, x86_64)»; остальную часть
+  строки не трогать.
 
-1. `bash scripts/build-macos.sh` → открыть DMG, перетащить в Applications, запустить
-   через «Всё равно открыть» (macOS 14 — правый клик → «Открыть»; 15+ — Настройки →
-   Безопасность → «Всё равно открыть»).
-2. Первый запуск: системный запрос микрофона появляется; разрешить.
-3. Гитара: E2 (6-я струна) и A2 настраиваются, центы реагируют; скрипка: A4.
-4. A4 = 442 → перезапуск приложения → в настройках и на экране 442, движок считает
-   от 442 (не 440).
-5. Бас-5 + пользовательский строй: создать, перезапустить → строй на месте;
-   удалить → исчезает и после перезапуска.
-6. Отказ: выключить микрофон в системных настройках → перезапуск → экран
-   `NoPermission`; включить → кнопка «Повторить» → тюнер снова работает.
-7. Отзыв в рантайме (см. 3.8) — зафиксировать поведение.
-8. Меню: «Unisono → Настройки…» (⌘,) открывает лист; ⌘Q выходит.
-9. Хоткеи: `1…6` выбирают струну (гитара), повторное нажатие — авто; `↑`/`↓` меняют
-   A4 на 0,1; `Space` — старт/стоп.
-10. Хроматика + «Низкий диапазон»: нота 30–65 Гц (например, B0) определяется;
-    без переключателя — окно 4096.
+### 3.6. docs/source/03_architecture.md
 
-## 5. Part 3 — гейты, пуш, отчёт
+- Таблица платформ: «Universal DMG, ad-hoc подпись» → «per-arch DMG (aarch64, x86_64),
+  ad-hoc подпись»
+
+### 3.7. docs/source/06_ui.md
+
+- «файл `Unisono_<version>_universal.dmg`» → «файлы `Unisono_<version>_aarch64.dmg`
+  и `Unisono_<version>_x86_64.dmg`»
+
+### 3.8. docs/source/09_plan.md
+
+- Этап 7: «Universal DMG, ad-hoc подпись, APK…» → «per-arch DMG (aarch64, x86_64),
+  ad-hoc подпись, APK…»
+
+### 3.9. docs/source/10_risks.md
+
+- D-14: «Universal DMG без нотаризации» → «per-arch DMG без нотаризации»
+- D-15: «Формат macOS-сборки — **Universal** (один DMG)» → «Формат macOS-сборки —
+  **per-arch** (два DMG: aarch64, x86_64); Universal отклонён на приёмке 4B — TCC
+  не сохраняет грант микрофона»
+
+### 3.10. docs/source/11_adr.md
+
+- ADR-005, строка про macOS: «**Universal DMG** (arm64 + x86_64)» → «**per-arch DMG**
+  (`aarch64` и `x86_64`; Universal отклонён в rev 4.1 — TCC не сохраняет грант
+  микрофона)»
+
+Гейт Part 2 (Sphinx с `-W`, как в CI):
+
+```bash
+[ -x docs/.venv/bin/sphinx-build ] || { python3 -m venv docs/.venv && docs/.venv/bin/pip install -r docs/requirements.txt; }
+make -C docs html
+grep -rni "universal" scripts/ .github/ README.md docs/source/
+```
+
+Последний grep должен быть **пуст** (историю промптов `Prompt.glm`/`Prompt.gemini`
+не считать — они вне этих путей).
+
+Коммит: `docs: per-arch DMG in docs, README and issue mirrors (rev 4.1)`
+
+## 4. Part 3 — CI: desktop-job
+
+`.github/workflows/ci.yml`, job `desktop`. Заменить:
+
+```yaml
+      - run: npm run tauri build -- --target universal-apple-darwin
+```
+
+и
+
+```yaml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+```
+
+на:
+
+```yaml
+      - run: npm run tauri build -- --target aarch64-apple-darwin
+      - run: npm run tauri build -- --target x86_64-apple-darwin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: |
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+```
+
+Остальное в job не менять (таргеты уже перечислены в `dtolnay/rust-toolchain`
+и `rustup target add`).
+
+Гейт (синтаксис; полный гейт — CI после пуша):
+
+```bash
+ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml"); puts "YAML OK"'
+```
+
+Коммит: `ci: build and upload per-arch macOS DMGs (rev 4.1)`
+
+## 5. Part 4 — полные гейты, пуш, отчёт
 
 Перед пушем — всё зелёное:
 
@@ -271,9 +289,15 @@ cargo test --workspace
 npm --prefix ui run check
 npm --prefix ui run test
 npm --prefix ui run build
-# Android (env из 2.2):
+# Android (локально, как на 4B):
+export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
+export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
+export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
 cargo check -p app --target aarch64-linux-android
-# macOS-бандл и DMG:
+# Повтор гейтов Parts 1–2 после всех правок:
+make -C docs html
 bash scripts/build-macos.sh
 ```
 
@@ -284,30 +308,30 @@ git push origin main
 gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
+Ждать все четыре job: `rust`, `ui`, `desktop`, `android`. В артефакте `dmg` job
+`desktop` должно лежать **два** файла.
+
 Готово, когда:
 
-- CI зелёный во всех job: `rust`, `ui`, `desktop`, `android`;
-- Universal DMG собран, `codesign --verify --deep --strict` проходит,
-  `Info.plist` содержит микрофон и `12.0`, SHA-256 записан;
-- ручной чек-лист владельца пройден (или явно перечислено, что не проверено);
-- нет незакоммиченных файлов, нет `target/`, `dist/`, `.venv` в индексе.
+- CI зелёный во всех job;
+- локально собраны оба DMG, `codesign --verify` и `plutil`-проверки прошли,
+  SHA-256 обоих в `dist/SHA256SUMS`;
+- `grep -rni universal` по `scripts/ .github/ README.md docs/source/` пуст;
+- нет незакоммиченных файлов; `target/`, `dist/`, `.venv` в индексе нет.
 
-Отчёт в конце (в чат и коротко в issue #5):
+Отчёт в конце (в чат и коротко комментарием в issue #5):
 
-1. Что исправлено (по пунктам 2–3), какие коммиты.
-2. Вывод проверок (команды + результат), номер зелёного CI-run.
-3. Путь к DMG, SHA-256, результат `plutil`/`codesign`.
-4. Что из ручного чек-листа подтвердил владелец, что осталось.
-5. Риски/долги для этапа 5: TCC при ad-hoc пересборках, реальный микрофон на Intel,
-   Windows/Linux, `oboe`.
+1. Коммиты по частям (sha, сообщения).
+2. Вывод гейтов (команды + результат), номер зелёного CI-run.
+3. Оба DMG: путь, SHA-256, вывод `plutil`/`codesign` по каждому.
+4. Пофайловый список правок docs/ и зеркал.
+5. Что осталось владельцу вручную: «первый запуск» aarch64-DMG (Gatekeeper через
+   quarantine-симуляцию), x86_64 на реальном Intel, оставшиеся пункты чек-листа 4B.
 
 ## 6. Что НЕ делать
 
-- Не начинать этап 5 (oboe, Kotlin-шим, APK-подпись) — отдельный промпт.
-- Не трогать `docs/`, `brand/`, `design/`.
-- Не делать notarization, Windows/Linux-сборки, релиз 0.1.0.
-- Не запрашивать и не коммитить keystore/пароли.
-- Не добавлять `unsafe` в `tuner-core`; `unsafe` — только в `tuner-audio` и только
-  при необходимости.
-- Не менять формулы/пороги DSP и публичный контракт `PitchDetector` (in-place, §4.3.7).
-- Не «упрощать» watchdog, удаляя переоткрытие или TCC-проверку.
+- Не начинать этап 5 (oboe, Kotlin-шим, APK-подпись).
+- Не трогать код приложения, DSP-формулы, контракт `PitchDetector`.
+- Не трогать `docs/` вне Part 2, `brand/`, `design/`, историю промптов (`Prompt.glm`).
+- Не делать notarization, Developer ID, Windows/Linux-сборки, релиз 0.1.0.
+- Не запрашивать и не коммитить keystore/пароли; не менять версию 0.1.0.
