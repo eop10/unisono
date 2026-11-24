@@ -471,20 +471,38 @@ mod tests {
         let sink: StateSink = Arc::new(move |st| {
             let _ = tx.send(st);
         });
+        // Щедрый бюджет для CI-нагрузки: планировщик ОС успевает передать
+        // кадры до исчерпания попыток.
+        let cfg = WatchdogConfig {
+            idle_ms: 150,
+            min_reopen_ms: 40,
+            max_attempts: 5,
+            tick_ms: 20,
+        };
         // Каждый старт проталкивает окно данных: анализатор оживает.
         let capture = SupervisedCapture::spawn(
             engine(),
             FakeSource::factory(Arc::clone(&started), None, 4096 + 1024),
             sink,
-            fast_cfg(),
+            cfg,
         )
         .expect("первый старт ок");
 
-        // Полторы секунды хватких циклов: захваты переоткрываются (блок данных
-        // исчерпывается), но каждый новый оживляет счётчик — сдачи нет.
-        std::thread::sleep(Duration::from_millis(1500));
+        // Poll-цикл с дедлайном 5 с: ждём подтверждения переоткрытий (started >= 2)
+        // и непрерывно проверяем, что захват остаётся активным (попытки сбрасываются).
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut reopens_seen = 0;
+        while std::time::Instant::now() < deadline {
+            assert!(capture.is_listening(), "данные идут — попытки сбрасываются");
+            reopens_seen = started.load(Ordering::Acquire);
+            if reopens_seen >= 3 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(30));
+        }
+
         assert!(capture.is_listening(), "данные идут — попытки сбрасываются");
-        assert!(started.load(Ordering::Acquire) >= 2, "было переоткрытие");
+        assert!(reopens_seen >= 2, "было переоткрытие (фактически: {reopens_seen})");
         capture.stop();
         assert!(!capture.is_listening());
     }

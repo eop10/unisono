@@ -1,4 +1,4 @@
-# Задача для Gemini 3.8 Flash в Antigravity: rev 4.1 — per-arch DMG вместо Universal
+# Задача для Gemini 3.8 Flash в Antigravity: этап 5 — Android: oboe, Kotlin-шим, подписанный APK
 
 Ты работаешь в существующем репозитории **Unisono** (мультиинструментальный тюнер,
 Rust + Tauri 2 + Svelte 5). Открой папку проекта в Antigravity и работай в режиме агента:
@@ -6,332 +6,197 @@ Rust + Tauri 2 + Svelte 5). Открой папку проекта в Antigravit
 
 - Репозиторий: https://github.com/eop10/unisono
 - Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
-- Последний запушенный коммит — `877695c`; поверх него локально лежит только этот файл
+- Последний запушенный коммит — `fdce3dd`; поверх него локально лежит только этот файл
   (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
-- Этапы 0–4B реализованы. Это точечная правка упаковки macOS (**rev 4.1**) по результату
-  ручной приёмки 4B. **Не начинай этап 5 (Android/oboe)** — промпт на него будет отдельно.
+- Этапы 0–4 закрыты (macOS принят, issue #5). Это **этап 5 — Android** (issue #6):
+  реальный захват звука через `oboe`, разрешения через Kotlin-плагин, release-APK,
+  подписанный ключом владельца из env.
 
 ## 0. Прочитай перед началом
 
-1. `HANDOFF.md` — правила, версии, ключи.
-2. `docs/source/07_platform.md` §7.2.2–7.2.3 — TCC и дистрибуция macOS (будешь править).
-3. `docs/source/08_build_test.md` §8.1 (таблица сборок), §8.4 (CI), §8.6 (чек-лист релиза).
-4. `scripts/build-macos.sh` — текущий universal-скрипт (полностью заменишь).
+1. `HANDOFF.md` — правила; §8 «Версии и ключи» (подпись APK из переменных окружения).
+2. `docs/source/07_platform.md` §7.1.1–7.1.4 — манифест, oboe-захват, Kotlin-плагин,
+   жизненный цикл; §7.3 — почему oboe, а не cpal.
+3. `docs/source/08_build_test.md` §8.4 (ручной чек-лист, п. 15 — Android 8 и 14),
+   §8.6 (релизный чек-лист Android).
+4. `.github/issues/05-android.md` — зеркало этапа 5.
+5. `crates/tuner-audio/src/android_stub.rs` и `lib.rs` (cfg-врезка `PlatformSource`).
+6. `src-tauri/gen/android/` — текущее состояние: манифест (сейчас содержит `INTERNET`
+   — это лишнее, см. Part 2), `MainActivity`, `build.gradle.kts` (minSdk 26,
+   targetSdk 37, `versionCode`/`versionName` из tauri.properties).
 
-## 1. Контекст: диагноз приёмки 4B
+## 1. Правила этапа
 
-Факты, зафиксированные владельцем вручную на macOS 27.2.1 / Apple M5 (arm64):
+- Ключи и пароли **не запрашивать, не коммитить, не логировать**: подпись только через
+  env `UNISONO_KEYSTORE`, `UNISONO_STORE_PASSWORD`, `UNISONO_KEY_ALIAS`,
+  `UNISONO_KEY_PASSWORD` (keystore создан владельцем и лежит вне репозитория).
+- `INTERNET` **не возвращать** в манифест (ФТ-12/НФТ-13). Следствие: `tauri android dev`
+  без `INTERNET` не работает — так задумано; офлайн проверять только на release-сборке,
+  «проблему» dev-сервера не чинить.
+- DSP-формулы и контракт `PitchDetector` не менять; `tuner-core` не трогать;
+  `unsafe` — только внутри `tuner-audio`.
+- `docs/`, `brand/`, `design/` не трогать (правки docs — отдельное разрешение владельца,
+  в этом промпте их нет). `README.md` — можно.
+- Коммит после каждой части; push один раз в конце. Гейт упал — стоп, не обходи и не
+  помечай ошибкой окружения; напиши в чат команду, вывод и файл.
+- Первый коммит Part 0 включает и этот файл промпта (лежит в дереве незакоммиченным).
 
-- **Universal-DMG** (fat x86_64+arm64, ad-hoc): системный запрос микрофона при
-  **каждом** запуске — грант TCC не сохраняется.
-- **aarch64-сборка**: запрос один раз при первом запуске, дальше тихо; Unisono
-  появляется в «Системные настройки → Конфиденциальность и безопасность → Микрофон».
-- Известный паттерн: tauri-apps/tauri#8041 (в комментариях то же у Electron) —
-  macOS/TCC не сохраняет разрешение микрофона для universal ad-hoc бинарников.
-  Уровень ОС, не наш баг; на одинарной архитектуре всё корректно.
+## 2. Part 0 — стабилизировать флейк-тест (P0)
 
-Решение владельца: **два per-arch DMG** (`aarch64` — Apple Silicon, `x86_64` — Intel);
-Universal убрать из сборки, CI, README и документации. Код приложения **не меняется**.
-
-Правила rev 4.1:
-
-- Код не трогать: `crates/`, `src-tauri/src/`, `ui/src/` — без изменений. Правки только
-  в `scripts/build-macos.sh`, `.github/workflows/ci.yml`, `README.md`,
-  `.github/issues/04-macos.md`, `.github/issues/07-release.md` и восьми файлах
-  `docs/source/` из Part 2.
-- `docs/` править **только** в перечисленных в Part 2 файлах — разрешение владельца
-  получено. Остальные `docs/`, `brand/`, `design/`, история промптов (`Prompt.glm`)
-  не трогать.
-- Не запрашивать keystore/пароли; notarization и Developer ID не делать; Windows/Linux
-  не собирать; версию 0.1.0 не менять; этап 5 не начинать.
-- Артефакты прошлых сборок в `target/` (`universal-apple-darwin`, `release`) — мусор,
-  не удалять специально, новый скрипт в них не пишет.
-- Первый коммит Part 1 включает и этот файл промпта (он лежит в дереве незакоммиченным).
-- Если гейт падает — остановись, не обходи проверку и не помечай её «ошибкой окружения»;
-  напиши в чат команду, вывод и файл.
-
-## 2. Part 1 — `scripts/build-macos.sh`: per-arch сборка
-
-Полностью заменить содержимое файла на:
-
-```bash
-#!/usr/bin/env bash
-# Per-arch DMG для macOS (docs/source/07_platform.md §7.2.2–7.2.3, 08_build_test.md §8.6).
-# Собирает app+dmg отдельно для aarch64 и x86_64, проверяет оба бандла и пишет SHA-256.
-# Падает на первой непрошедшей проверке (set -euo pipefail).
-#
-# Universal не используем (rev 4.1, приёмка 4B): macOS/TCC не сохраняет разрешение
-# микрофона для universal ad-hoc бинарников — системный запрос при каждом запуске.
-# На одинарной архитектуре грант персистится.
-
-set -euo pipefail
-
-# В headless/скриптовом окружении Finder AppleScript виснет (-1712); CI=true
-# включает --skip-jenkins в bundle_dmg.sh.
-export CI="${CI:-true}"
-
-cd "$(dirname "$0")/.."
-ROOT="$(pwd)"
-
-echo "==> Зависимости"
-npm ci
-npm --prefix ui ci
-
-echo "==> Rust-таргеты per-arch"
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
-# Проверки одного бандла: $1 — .app, $2 — .dmg.
-check_bundle() {
-  # Разрешение микрофона обязано быть в Info.plist (7.2.2).
-  # Без -q: grep читает весь вывод, иначе plutil/codesign ловят SIGPIPE (pipefail).
-  plutil -p "$1/Contents/Info.plist" | grep NSMicrophoneUsageDescription >/dev/null
-  plutil -p "$1/Contents/Info.plist" | grep '"LSMinimumSystemVersion" => "12.0"' >/dev/null
-  # Целостность подписи и Info.plist entries (7.2.3, ревью 3.6).
-  codesign --verify --deep --strict "$1"
-  codesign -dv "$1" 2>&1 | grep "Info.plist entries=" >/dev/null
-  codesign -dv "$1" 2>&1 | grep adhoc >/dev/null
-  hdiutil verify "$2"
-}
-
-declare -a BUILT=()
-
-for TARGET in aarch64-apple-darwin x86_64-apple-darwin; do
-  echo "==> Сборка $TARGET (app + dmg)"
-  npm run tauri build -- --target "$TARGET"
-
-  BUNDLE="$ROOT/target/$TARGET/release/bundle"
-  APP="$BUNDLE/macos/Unisono.app"
-  shopt -s nullglob
-  dmgs=( "$BUNDLE/dmg"/Unisono_*.dmg )
-  if (( ${#dmgs[@]} != 1 )); then
-    echo "ожидался один DMG для $TARGET, найдено: ${#dmgs[@]}" >&2
-    exit 1
-  fi
-  DMG="${dmgs[0]}"
-
-  echo "==> Проверки бандла $TARGET"
-  check_bundle "$APP" "$DMG"
-  BUILT+=( "$DMG" )
-done
-
-echo "==> SHA-256"
-mkdir -p "$ROOT/dist"
-shasum -a 256 "${BUILT[@]}" | tee "$ROOT/dist/SHA256SUMS"
-
-echo "==> Готово:"
-printf '  %s\n' "${BUILT[@]}"
-```
-
-Ожидаемые имена: `Unisono_0.1.0_aarch64.dmg` и `Unisono_0.1.0_x86_64.dmg`
-(Tauri суффиксирует по таргету; проверять количеством, не жёстким именем).
+`crates/tuner-audio/src/watchdog.rs`, тест `watchdog_resets_attempts_when_data_flows`
+(~строка 468): жёсткий `sleep(1500 мс)` + assertion `is_listening()`. Под нагрузкой CI
+бюджет попыток `fast_cfg()` исчерпывается раньше, чем кадры сбрасывают счётчик —
+падение уже было (CI run 45324113750, Linux). Чинить **только тест и/или тестовый
+конфиг**, прод-код не трогать: либо poll-цикл с дедлайном (~5 с), фиксирующий инварианты
+«listening жив» и «было переоткрытие», либо более щедрые бюджеты `fast_cfg` для этого
+теста. Остальные watchdog-тесты не ослаблять.
 
 Гейт:
 
 ```bash
-bash scripts/build-macos.sh
-plutil -p target/aarch64-apple-darwin/release/bundle/macos/Unisono.app/Contents/Info.plist | grep NSMicrophoneUsageDescription
-plutil -p target/x86_64-apple-darwin/release/bundle/macos/Unisono.app/Contents/Info.plist | grep NSMicrophoneUsageDescription
-wc -l dist/SHA256SUMS   # ожидается 2
+cargo test -p tuner-audio
+for i in $(seq 1 10); do cargo test -p tuner-audio watchdog_resets_attempts || exit 1; done
 ```
 
-Коммит (включая `Prompt.gemini`): `build: per-arch macOS DMGs instead of universal (rev 4.1)`
+Коммит: `test: stabilize watchdog reopen test under CI load (stage 5 part 0)`
 
-## 3. Part 2 — README, зеркала issues и docs (разрешение владельца получено)
+## 3. Part 1 — OboeSource
 
-Точечные замены. Формулировки можно слегка полировать, смысл — как указано.
+1. `crates/tuner-audio/Cargo.toml`: зависимость `oboe` **только** для Android:
+   `[target.'cfg(target_os = "android")'.dependencies]`; версию подобрать под
+   NDK 26.1.10909125.
+2. Новый `crates/tuner-audio/src/oboe.rs` по образцу docs §7.1.2: `AudioFormat::Float`,
+   mono, `set_sample_rate(48_000)`, `InputPreset::VoiceRecognition` (без AGC/NS);
+   callback толкает сэмплы в `rtrb::Producer` (переполнение — счётчик, не паника);
+   открытие/закрытие в потоке-владельце; контракт `AudioSource`, фактическая частота —
+   из созданного потока. Отсутствие разрешения при открытии → `AudioError::PermissionDenied`
+   (сверить коды ошибок oboe/AAudio по документации выбранной версии); прочие ошибки →
+   `AudioError::Device`.
+3. `lib.rs`: `#[cfg(target_os = "android")] pub use android_stub::StubSource as
+   PlatformSource;` → заменить на `OboeSource`; `android_stub` удалить, если ссылок
+   не осталось. Хостовые сборки (macOS/Linux/CI rust) oboe не должны видеть вообще.
 
-### 3.1. README.md
-
-- строка «| macOS 12+ | Universal DMG | без нотаризации: первый запуск через
-  «Всё равно открыть» |» → «| macOS 12+ | DMG per-arch (aarch64 / x86_64) | без
-  нотаризации: первый запуск через «Всё равно открыть» |»
-
-### 3.2. Зеркала issues
-
-- `.github/issues/04-macos.md`: «собрать Universal DMG без нотаризации» →
-  «собрать per-arch DMG (aarch64, x86_64) без нотаризации»; чекбокс «Universal DMG +
-  ad-hoc подпись…» → «Per-arch DMG (aarch64, x86_64) + ad-hoc подпись…»
-- `.github/issues/07-release.md`: «macOS: Universal DMG, ad-hoc подпись.» →
-  «macOS: per-arch DMG (aarch64, x86_64), ad-hoc подпись.»
-
-### 3.3. docs/source/07_platform.md (§7.2.3)
-
-- «Основной путь для 1.0: **Universal DMG без нотаризации**…» → «Основной путь
-  для 1.0: **per-arch DMG без нотаризации** — `aarch64` (Apple Silicon) и `x86_64`
-  (Intel) отдельными файлами, раздача через GitHub Releases.»
-- Сразу после добавить абзац-обоснование: «Universal-бандл не используется (rev 4.1,
-  приёмка 4B): macOS не сохраняет разрешение микрофона (TCC) для universal ad-hoc
-  бинарников — системный запрос появляется при каждом запуске. На одинарной
-  архитектуре грант сохраняется (проверено владельцем на macOS 27/arm64;
-  ср. tauri-apps/tauri#8041).»
-- Блок команд «Сборка и ad-hoc подпись» заменить на:
-
-```bash
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
-bash scripts/build-macos.sh   # обе сборки, проверки бандлов, dist/SHA256SUMS
-```
-
-- В абзаце про `codesign -s -` уточнить: ad-hoc подпись ставит сам Tauri при сборке,
-  ручная подпись не нужна; остальной смысл абзаца (Gatekeeper, «повреждено») оставить.
-
-### 3.4. docs/source/08_build_test.md
-
-- Строка таблицы «| DMG (Universal) | `npm run tauri build -- --target
-  universal-apple-darwin` |» → две строки:
-  «| DMG (aarch64) | `npm run tauri build -- --target aarch64-apple-darwin` |»
-  «| DMG (x86_64) | `npm run tauri build -- --target x86_64-apple-darwin` |»
-- «CI собирает **неподписанные** артефакты: Universal DMG без notarization и debug
-  APK.» → «…: per-arch DMG (aarch64, x86_64) без notarization и debug APK.»
-- Чек-лист 8.6, п. 3: «Собран Universal DMG (`--target universal-apple-darwin`),
-  `.app` подписан ad-hoc.» → «Собраны per-arch DMG (`aarch64` и `x86_64`), `.app`
-  подписан ad-hoc.»
-- Чек-лист 8.6, п. 6: «Установка с нуля на Apple Silicon и Intel: DMG открывается…» →
-  «Установка с нуля на Apple Silicon (`Unisono_*_aarch64.dmg`) и Intel
-  (`Unisono_*_x86_64.dmg`): DMG открывается, приложение запускается после
-  «Всё равно открыть», микрофон работает.»
-
-### 3.5. docs/source/02_requirements.md
-
-- НФТ-09: «macOS 12+ (Universal)» → «macOS 12+ (aarch64 и x86_64, per-arch DMG)»
-- Критерии 2.6: «Universal DMG» → «per-arch DMG (aarch64, x86_64)»; остальную часть
-  строки не трогать.
-
-### 3.6. docs/source/03_architecture.md
-
-- Таблица платформ: «Universal DMG, ad-hoc подпись» → «per-arch DMG (aarch64, x86_64),
-  ad-hoc подпись»
-
-### 3.7. docs/source/06_ui.md
-
-- «файл `Unisono_<version>_universal.dmg`» → «файлы `Unisono_<version>_aarch64.dmg`
-  и `Unisono_<version>_x86_64.dmg`»
-
-### 3.8. docs/source/09_plan.md
-
-- Этап 7: «Universal DMG, ad-hoc подпись, APK…» → «per-arch DMG (aarch64, x86_64),
-  ad-hoc подпись, APK…»
-
-### 3.9. docs/source/10_risks.md
-
-- D-14: «Universal DMG без нотаризации» → «per-arch DMG без нотаризации»
-- D-15: «Формат macOS-сборки — **Universal** (один DMG)» → «Формат macOS-сборки —
-  **per-arch** (два DMG: aarch64, x86_64); Universal отклонён на приёмке 4B — TCC
-  не сохраняет грант микрофона»
-
-### 3.10. docs/source/11_adr.md
-
-- ADR-005, строка про macOS: «**Universal DMG** (arm64 + x86_64)» → «**per-arch DMG**
-  (`aarch64` и `x86_64`; Universal отклонён в rev 4.1 — TCC не сохраняет грант
-  микрофона)»
-
-Гейт Part 2 (Sphinx с `-W`, как в CI):
-
-```bash
-[ -x docs/.venv/bin/sphinx-build ] || { python3 -m venv docs/.venv && docs/.venv/bin/pip install -r docs/requirements.txt; }
-make -C docs html
-grep -rni "universal" scripts/ .github/ README.md docs/source/
-```
-
-Последний grep должен быть **пуст** (историю промптов `Prompt.glm`/`Prompt.gemini`
-не считать — они вне этих путей).
-
-Коммит: `docs: per-arch DMG in docs, README and issue mirrors (rev 4.1)`
-
-## 4. Part 3 — CI: desktop-job
-
-`.github/workflows/ci.yml`, job `desktop`. Заменить:
-
-```yaml
-      - run: npm run tauri build -- --target universal-apple-darwin
-```
-
-и
-
-```yaml
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dmg
-          path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
-```
-
-на:
-
-```yaml
-      - run: npm run tauri build -- --target aarch64-apple-darwin
-      - run: npm run tauri build -- --target x86_64-apple-darwin
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dmg
-          path: |
-            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-```
-
-Остальное в job не менять (таргеты уже перечислены в `dtolnay/rust-toolchain`
-и `rustup target add`).
-
-Гейт (синтаксис; полный гейт — CI после пуша):
-
-```bash
-ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml"); puts "YAML OK"'
-```
-
-Коммит: `ci: build and upload per-arch macOS DMGs (rev 4.1)`
-
-## 5. Part 4 — полные гейты, пуш, отчёт
-
-Перед пушем — всё зелёное:
+Гейт:
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-npm --prefix ui run check
-npm --prefix ui run test
-npm --prefix ui run build
-# Android (локально, как на 4B):
 export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
 export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
 export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
+export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$NDK_TOOLCHAIN/bin/armv7a-linux-androideabi26-clang"
 cargo check -p app --target aarch64-linux-android
-# Повтор гейтов Parts 1–2 после всех правок:
-make -C docs html
-bash scripts/build-macos.sh
+cargo check -p app --target armv7-linux-androideabi
 ```
 
-Затем:
+Коммит: `audio: OboeSource replaces android stub (stage 5)`
+
+## 4. Part 2 — манифест, Kotlin-плагин, lifecycle
+
+1. `src-tauri/gen/android/app/src/main/AndroidManifest.xml`:
+   - **убрать** `<uses-permission android:name="android.permission.INTERNET" />`
+     (его добавил генератор Tauri — это нарушение НФТ-13);
+   - добавить `RECORD_AUDIO`, `VIBRATE` и
+     `<uses-feature android:name="android.hardware.microphone" android:required="true" />`;
+   - `android:allowBackup="false"` (§7.1.1).
+2. Kotlin-плагин по docs §7.1.3: `MicPlugin` с командами `requestMic` (проверка
+   разрешения + запрос через Activity, pending-invoke), `keepScreenOn` (включение
+   **и выключение** флага — параметр или два метода, по §7.1.4), `vibrate`
+   (one-shot 20 мс). Регистрация в `MainActivity`. Точные имена API сверить с
+   текущей версией Tauri 2 (`Plugin`, `@Command`, `Invoke`) — docs предупреждает,
+   что имена дрейфуют между версиями.
+3. `src-tauri`: мосты — команды `request_mic`, `keep_screen_on`, `vibrate`
+   (на Android — через мобильный плагин, `run_mobile_plugin`; на desktop — тихие
+   заглушки-успехи), и команда `platform()` → `"android" | "desktop"` по cfg,
+   чтобы UI ветвился без новых зависимостей.
+4. UI (`ui/src`): на Android перед автостартом `startListening()` — `requestMic`;
+   отказ → экран `NoPermission` (уже есть, не переделывать). `keepScreenOn(true)` при
+   активном слушании, `false` при стопе. Вибрация 20 мс при «в строе», только если
+   `settings.haptics`. Обёртки в `ui/src/ipc` с типами, ветвление по `platform()`.
+5. Жизненный цикл §7.1.4: `onPause` → `stop_listening` + снять флаг; возврат на экран —
+   обычный автостарт с `requestMic` при необходимости. Foreground service не делать.
+
+Гейт:
+
+```bash
+npm --prefix ui run check
+npm --prefix ui run test
+npm --prefix ui run build
+cargo check -p app --target aarch64-linux-android
+# debug-APK локально (как в CI):
+npm run tauri android build -- --apk --target aarch64 --target armv7
+```
+
+Коммит: `android: mic plugin, manifest permissions, lifecycle (stage 5)`
+
+## 5. Part 3 — release-подпись из env
+
+1. `src-tauri/gen/android/app/build.gradle.kts`: `signingConfigs.release` читает
+   `System.getenv("UNISONO_KEYSTORE")` / `UNISONO_STORE_PASSWORD` / `UNISONO_KEY_ALIAS` /
+   `UNISONO_KEY_PASSWORD`. Env не заданы → сборка release падает с понятной ошибкой;
+   **фолбэка на debug-подпись нет**. Пути и секреты в файлы не писать.
+2. Собрать release-APK. Значения env задаст владелец перед запуском; если в текущей
+   сессии их нет — **не запрашивать**: собрать debug-подпись не нужно, просто собрать
+   release только если env заданы, иначе зафиксировать в отчёте «release-подпись ждёт
+   env владельца» и проверить конфигурацию сборкой с пустыми env (должна упасть
+   с понятной ошибкой — это ожидаемо и записывается как результат).
+
+```bash
+npm run tauri android build -- --apk --target aarch64 --target armv7
+```
+
+3. Проверки (если release собран):
+
+```bash
+APK=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
+BT=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)
+"$BT/apksigner" verify --print-certs "$APK"
+"$BT/aapt2" dump permissions "$APK"   # RECORD_AUDIO и VIBRATE есть, INTERNET нет
+"$BT/aapt2" dump badging "$APK" | grep -E "versionCode|versionName|native-code"
+shasum -a 256 "$APK"
+```
+
+Ожидаемо: `versionCode 1`, `versionName 0.1.0`, native-code arm64-v8a + armeabi-v7a.
+
+Коммит: `android: release signing from env (stage 5)`
+
+## 6. Part 4 — README, зеркала, полные гейты, пуш, отчёт
+
+1. `README.md`: раздел sideload для Android — «разрешите установку из неизвестных
+   источников», Android 8.0+, arm64-v8a/armeabi-v7a, обновление поверх тем же ключом.
+2. `.github/issues/05-android.md`: отметить чекбоксы, закрытые кодом; ручные пункты
+   (тесты на устройствах, apksigner на релизе) оставить открытыми.
+3. Полные гейты — повторить все из Parts 1–2 (fmt, clippy, test, ui × 3, android check
+   × 2 таргета) и флейк-гейт Part 0.
+4. Пуш:
 
 ```bash
 git push origin main
 gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
-Ждать все четыре job: `rust`, `ui`, `desktop`, `android`. В артефакте `dmg` job
-`desktop` должно лежать **два** файла.
+CI: все четыре job зелёные (`rust`, `ui`, `desktop`, `android`); в артефакте `apk` —
+debug-сборка как раньше.
 
-Готово, когда:
-
-- CI зелёный во всех job;
-- локально собраны оба DMG, `codesign --verify` и `plutil`-проверки прошли,
-  SHA-256 обоих в `dist/SHA256SUMS`;
-- `grep -rni universal` по `scripts/ .github/ README.md docs/source/` пуст;
-- нет незакоммиченных файлов; `target/`, `dist/`, `.venv` в индексе нет.
-
-Отчёт в конце (в чат и коротко комментарием в issue #5):
+Отчёт в конце (в чат и коротко комментарием в issue #6):
 
 1. Коммиты по частям (sha, сообщения).
 2. Вывод гейтов (команды + результат), номер зелёного CI-run.
-3. Оба DMG: путь, SHA-256, вывод `plutil`/`codesign` по каждому.
-4. Пофайловый список правок docs/ и зеркал.
-5. Что осталось владельцу вручную: «первый запуск» aarch64-DMG (Gatekeeper через
-   quarantine-симуляцию), x86_64 на реальном Intel, оставшиеся пункты чек-листа 4B.
+3. APK: путь, SHA-256, вывод `apksigner verify`, дамп permissions (подтверждение
+   «нет INTERNET»), versionCode/versionName/native-code.
+4. Что осталось владельцу вручную: чек-лист 8.4 п. 15 на Android 8 и Android 14
+   (разрешение/отказ/отзыв, микрофон, вибрация, keep-screen-on), установка release-APK
+   с env-подписью, обновление поверх с тем же ключом, офлайн-поведение release-сборки.
+5. Риски: поведение `InputPreset::VoiceRecognition` на прошивках, связка oboe↔NDK.
 
-## 6. Что НЕ делать
+## 7. Что НЕ делать
 
-- Не начинать этап 5 (oboe, Kotlin-шим, APK-подпись).
-- Не трогать код приложения, DSP-формулы, контракт `PitchDetector`.
-- Не трогать `docs/` вне Part 2, `brand/`, `design/`, историю промптов (`Prompt.glm`).
-- Не делать notarization, Developer ID, Windows/Linux-сборки, релиз 0.1.0.
-- Не запрашивать и не коммитить keystore/пароли; не менять версию 0.1.0.
+- Не запрашивать и не коммитить keystore/пароли; не логировать их значения.
+- Не возвращать `INTERNET`; не чинить `tauri android dev`.
+- Не трогать `docs/`, `brand/`, `design/`, DSP-формулы, контракт `PitchDetector`,
+  `tuner-core`.
+- Не делать foreground service, iOS, Google Play, не публиковать релиз 0.1.0.
+- Не менять `version` 0.1.0 и `versionCode 1`.
