@@ -15,7 +15,7 @@
   import { overlay, openOverlay } from './stores/overlay';
   import { applySettingsToEngine, loadSettings, settings } from './stores/settings';
   import { loadPresets } from './stores/customs';
-  import { startListening } from './stores/tuner';
+  import { startListening, stopListening } from './stores/tuner';
   import { onMenuSettings } from './ipc/commands';
 
   const s = $derived($settings);
@@ -43,7 +43,23 @@
     };
     apply();
     mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
+
+    // Жизненный цикл (7.1.4): onPause/hidden останавливает звук, onResume возобновляет.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        void stopListening();
+      } else if (document.visibilityState === 'visible') {
+        if (!get(catalogError)) {
+          void startListening();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      mq.removeEventListener('change', apply);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   });
 
   const theme = $derived(s.theme === 'system' ? (systemLight ? 'light' : 'dark') : s.theme);

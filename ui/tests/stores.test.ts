@@ -24,6 +24,10 @@ vi.mock('../src/ipc/commands', () => ({
   getPresets: vi.fn(async () => [] as { id: string; instrumentId: string; name: string; strings: number[] }[]),
   savePreset: vi.fn(async (_p: unknown) => {}),
   deletePreset: vi.fn(async (_id: string) => {}),
+  getPlatform: vi.fn(async () => 'desktop' as const),
+  requestMic: vi.fn(async () => {}),
+  keepScreenOn: vi.fn(async (_enabled: boolean) => {}),
+  vibrate: vi.fn(async () => {}),
 }));
 
 import * as ipc from '../src/ipc/commands';
@@ -347,5 +351,103 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
       expect.objectContaining({ id: 'violin_std' }),
     );
     expect(get(settings).tuningId).toBe('violin_std');
+  });
+
+  describe('android platform, permissions, keepScreenOn & haptics', () => {
+    it('requests mic on android before start_listening', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
+      await startListening();
+      expect(ipc.requestMic).toHaveBeenCalled();
+      expect(ipc.startListening).toHaveBeenCalled();
+      expect(ipc.keepScreenOn).toHaveBeenCalledWith(true);
+      expect(get(listening)).toBe(true);
+    });
+
+    it('shows nopermission if mic request is denied on android', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
+      vi.mocked(ipc.requestMic).mockRejectedValueOnce('permission denied');
+      await startListening();
+      expect(ipc.requestMic).toHaveBeenCalled();
+      expect(ipc.startListening).not.toHaveBeenCalled();
+      expect(get(listening)).toBe(false);
+      expect(get(tuner).kind).toBe('nopermission');
+      expect(ipc.keepScreenOn).toHaveBeenCalledWith(false);
+    });
+
+    it('clears screen flag when stopped', async () => {
+      await stopListening();
+      expect(ipc.stopListening).toHaveBeenCalled();
+      expect(ipc.keepScreenOn).toHaveBeenCalledWith(false);
+      expect(get(listening)).toBe(false);
+    });
+
+    it('vibrates on transition into intune when haptics is enabled', async () => {
+      let messageHandler: ((s: TunerState) => void) | undefined;
+      vi.mocked(ipc.startListening).mockImplementationOnce(async (channel: unknown) => {
+        messageHandler = (channel as Channel<TunerState>).onmessage;
+      });
+      settings.set({ ...DEFAULT_SETTINGS, haptics: true });
+      await startListening();
+
+      expect(messageHandler).toBeDefined();
+      messageHandler!({
+        kind: 'tracking',
+        cents: -5,
+        clarity: 0.9,
+        db: -20,
+        noteMidi: 40,
+        targetHz: 440,
+        f0: 435,
+        stringIndices: [0],
+      });
+      expect(ipc.vibrate).not.toHaveBeenCalled();
+
+      // Transition to intune
+      messageHandler!({
+        kind: 'intune',
+        cents: 0,
+        clarity: 0.98,
+        db: -18,
+        noteMidi: 40,
+        targetHz: 440,
+        f0: 440,
+        stringIndices: [0],
+      });
+      expect(ipc.vibrate).toHaveBeenCalledTimes(1);
+
+      // Subsequent intune state doesn't re-trigger vibrate
+      messageHandler!({
+        kind: 'intune',
+        cents: 1,
+        clarity: 0.98,
+        db: -18,
+        noteMidi: 40,
+        targetHz: 440,
+        f0: 440.2,
+        stringIndices: [0],
+      });
+      expect(ipc.vibrate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not vibrate if haptics is disabled', async () => {
+      let messageHandler: ((s: TunerState) => void) | undefined;
+      vi.mocked(ipc.startListening).mockImplementationOnce(async (channel: unknown) => {
+        messageHandler = (channel as Channel<TunerState>).onmessage;
+      });
+      settings.set({ ...DEFAULT_SETTINGS, haptics: false });
+      await startListening();
+
+      messageHandler!({
+        kind: 'intune',
+        cents: 0,
+        clarity: 0.98,
+        db: -18,
+        noteMidi: 40,
+        targetHz: 440,
+        f0: 440,
+        stringIndices: [0],
+      });
+      expect(ipc.vibrate).not.toHaveBeenCalled();
+    });
   });
 });

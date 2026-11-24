@@ -6,9 +6,31 @@ mod menu;
 
 use tauri::Manager;
 
+#[cfg(target_os = "android")]
+pub struct MicHandle(pub tauri::plugin::PluginHandle<tauri::Wry>);
+#[cfg(not(target_os = "android"))]
+pub struct MicHandle;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mic_plugin = tauri::plugin::Builder::<tauri::Wry>::new("mic")
+        .setup(|app, api| {
+            #[cfg(target_os = "android")]
+            {
+                let handle = api.register_android_plugin("app.unisono.tuner", "MicPlugin")?;
+                app.manage(MicHandle(handle));
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                let _ = api;
+                app.manage(MicHandle);
+            }
+            Ok(())
+        })
+        .build();
+
     tauri::Builder::default()
+        .plugin(mic_plugin)
         .plugin(tauri_plugin_opener::init())
         .manage(bridge::AppState::new())
         .invoke_handler(tauri::generate_handler![
@@ -27,6 +49,10 @@ pub fn run() {
             commands::get_presets,
             commands::save_preset,
             commands::delete_preset,
+            commands::platform,
+            commands::request_mic,
+            commands::keep_screen_on,
+            commands::vibrate,
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

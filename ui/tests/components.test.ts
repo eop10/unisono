@@ -23,6 +23,10 @@ vi.mock('../src/ipc/commands', () => ({
   getPresets: vi.fn(async () => []),
   savePreset: vi.fn(async () => {}),
   deletePreset: vi.fn(async () => {}),
+  getPlatform: vi.fn(async () => 'desktop' as const),
+  requestMic: vi.fn(async () => {}),
+  keepScreenOn: vi.fn(async () => {}),
+  vibrate: vi.fn(async () => {}),
 }));
 
 import * as ipc from '../src/ipc/commands';

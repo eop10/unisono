@@ -83,3 +83,25 @@ export async function onMenuSettings(cb: () => void): Promise<() => void> {
   const unlisten = await listen('menu-settings', () => cb());
   return unlisten;
 }
+
+export type Platform = 'android' | 'desktop';
+
+/** Платформа: 'android' | 'desktop' (этап 5). */
+export async function getPlatform(): Promise<Platform> {
+  return await invoke<Platform>('platform');
+}
+
+/** Запрос разрешения микрофона (на Android — через Kotlin плагин). */
+export async function requestMic(): Promise<void> {
+  await invoke('request_mic');
+}
+
+/** Управление флагом FLAG_KEEP_SCREEN_ON. */
+export async function keepScreenOn(enabled: boolean): Promise<void> {
+  await invoke('keep_screen_on', { enabled });
+}
+
+/** Вибрация 20 мс при попадании в строй. */
+export async function vibrate(): Promise<void> {
+  await invoke('vibrate');
+}

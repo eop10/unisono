@@ -130,6 +130,74 @@ pub fn delete_preset(id: String, state: State<'_, AppState>) {
     state.delete_preset(&id);
 }
 
+/// Платформа: "android" | "desktop" по cfg (этап 5, docs/source/07_platform.md §7.1.3).
+#[tauri::command]
+pub fn platform() -> &'static str {
+    if cfg!(target_os = "android") {
+        "android"
+    } else {
+        "desktop"
+    }
+}
+
+/// Запрос разрешения микрофона (на Android — через Kotlin MicPlugin; на desktop — успех).
+#[tauri::command]
+pub async fn request_mic(app: AppHandle) -> Result<(), String> {
+    log::info!("request_mic");
+    #[cfg(target_os = "android")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let mic = app.state::<crate::MicHandle>();
+            mic.0
+                .run_mobile_plugin::<()>("requestMic", ())
+                .map_err(|e| format!("ошибка запроса микрофона: {e}"))
+        })
+        .await
+        .map_err(|e| format!("задача запроса микрофона упала: {e}"))?
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
+/// Флаг FLAG_KEEP_SCREEN_ON (на Android — через Kotlin MicPlugin; на desktop — заглушка).
+#[tauri::command]
+pub fn keep_screen_on(enabled: bool, app: AppHandle) -> Result<(), String> {
+    log::debug!("keep_screen_on: {enabled}");
+    #[cfg(target_os = "android")]
+    {
+        let mic = app.state::<crate::MicHandle>();
+        mic.0
+            .run_mobile_plugin::<()>("keepScreenOn", serde_json::json!({ "enabled": enabled }))
+            .map_err(|e| format!("ошибка keep_screen_on: {e}"))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (enabled, app);
+        Ok(())
+    }
+}
+
+/// Вибрация 20 мс при «в строе» (на Android — через Kotlin MicPlugin; на desktop — заглушка).
+#[tauri::command]
+pub fn vibrate(app: AppHandle) -> Result<(), String> {
+    log::debug!("vibrate");
+    #[cfg(target_os = "android")]
+    {
+        let mic = app.state::<crate::MicHandle>();
+        mic.0
+            .run_mobile_plugin::<()>("vibrate", ())
+            .map_err(|e| format!("ошибка вибрации: {e}"))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

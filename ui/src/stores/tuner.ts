@@ -6,9 +6,13 @@ import { get, writable } from 'svelte/store';
 import { Channel } from '@tauri-apps/api/core';
 import type { TunerKind, TunerState } from '../lib/types';
 import {
+  getPlatform,
+  keepScreenOn,
+  requestMic,
   selectString as ipcSelectString,
   startListening as ipcStart,
   stopListening as ipcStop,
+  vibrate,
 } from '../ipc/commands';
 import { settings } from './settings';
 
@@ -26,15 +30,22 @@ const SILENT: TunerState = {
 export const tuner = writable<TunerState>({ ...SILENT });
 export const listening = writable(false);
 
+let prevKind: TunerKind = 'silent';
+
 /** Аудио-ошибка → экран (4.4): отказ в доступе или сбой устройства.
  *  Ошибка приходит тегированным объектом `{"kind":"permissionDenied"}`
  *  (serde: tag+content); строку тоже принимаем — на случай старого формата. */
 function isPermissionDenied(err: unknown): boolean {
   if (typeof err === 'string') {
-    return err === 'PermissionDenied' || err === 'permissionDenied';
+    const s = err.toLowerCase();
+    return s.includes('permission') || s.includes('denied');
   }
   const kind = (err as { kind?: unknown } | null | undefined)?.kind;
-  return kind === 'permissionDenied' || kind === 'PermissionDenied';
+  if (typeof kind === 'string') {
+    const s = kind.toLowerCase();
+    return s.includes('permission') || s.includes('denied');
+  }
+  return false;
 }
 
 function audioErrorState(err: unknown): TunerState {
@@ -43,12 +54,31 @@ function audioErrorState(err: unknown): TunerState {
 }
 
 export async function startListening(): Promise<void> {
+  try {
+    const platform = await getPlatform();
+    if (platform === 'android') {
+      await requestMic();
+    }
+  } catch (e) {
+    listening.set(false);
+    tuner.set(audioErrorState(e));
+    void keepScreenOn(false);
+    return;
+  }
+
   const channel = new Channel<TunerState>();
+  prevKind = 'silent';
   channel.onmessage = (state) => {
     // Watchdog сдался (7.2.1): захват мёртв — кнопка возвращается в «Слушать».
     if (state.kind === 'error' || state.kind === 'nopermission') {
       listening.set(false);
+      void keepScreenOn(false);
+    } else if (state.kind === 'intune' && prevKind !== 'intune') {
+      if (get(settings).haptics) {
+        void vibrate();
+      }
     }
+    prevKind = state.kind;
     tuner.set(state);
   };
   // Сразу в «Слушаю…»: после «Повторить» не мигают старые цифры (ревью 4A).
@@ -56,13 +86,16 @@ export async function startListening(): Promise<void> {
   try {
     await ipcStart(channel);
     listening.set(true);
+    void keepScreenOn(true);
   } catch (e) {
     listening.set(false);
     tuner.set(audioErrorState(e));
+    void keepScreenOn(false);
   }
 }
 
 export async function stopListening(): Promise<void> {
+  prevKind = 'silent';
   try {
     await ipcStop();
   } catch {
@@ -70,6 +103,7 @@ export async function stopListening(): Promise<void> {
   } finally {
     listening.set(false);
     tuner.set({ ...SILENT });
+    void keepScreenOn(false);
   }
 }
 
