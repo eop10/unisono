@@ -57,7 +57,10 @@ tuner-storage (crate)
 | `low_range` | `bool` | `false` | разрешает окно 16384 в хроматическом режиме |
 | `big_type` | `bool` | `false` | — |
 | `onboarding_done` | `bool` | `false` | — |
-| `schema_version` | `u32` | 2 | 2 |
+| `input_device` | `Option<String>` | `null` | имя аудиовхода (`null` = системный вход по умолчанию; desktop-only) |
+| `schema_version` | `u32` | 3 | 3 |
+
+Миграция схемы: текущая версия — **схема 3** (#12). При чтении файла со схемой 2 поле `input_device` инициализируется значением `None` («По умолчанию»), а при сохранении версия автоматически обновляется до 3. Файлы со схемой выше текущей не перезаписываются во избежание потери данных.
 
 Правило чтения: значение вне диапазона **заменяется значением по умолчанию** без падения
 и без диалога. Реализация — `Settings::sanitize()` после десериализации.
@@ -80,6 +83,7 @@ pub struct Settings {
     pub low_range: bool,
     pub big_type: bool,
     pub onboarding_done: bool,
+    pub input_device: Option<String>,
 }
 ```
 
