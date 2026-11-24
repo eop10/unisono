@@ -82,7 +82,7 @@ impl Sensitivity {
 }
 
 /// Длительность удержания последнего показания при затухании струны по умолчанию (мс, #13).
-pub const DEFAULT_HOLD_MS: u32 = 1800;
+pub const DEFAULT_HOLD_MS: u32 = 2500;
 
 /// Конфигурация движка. `tuning = None` — хроматический режим (D-6);
 /// `manual_string = Some(i)` — струна, выбранная тапом (ФТ-15).
@@ -98,7 +98,7 @@ pub struct EngineConfig {
     pub manual_string: Option<usize>,
     /// «Низкий диапазон» (5.3): окно 16384 в хроматическом режиме (4.2.3).
     pub low_range: bool,
-    /// Удержание показания при затухании струны в мс (#13, дефолт 1800).
+    /// Удержание показания при затухании струны в мс (#13, дефолт 2500).
     pub hold_ms: u32,
 }
 
@@ -343,9 +343,9 @@ impl TunerEngine {
             None | Some(Estimate::Silent) | Some(Estimate::Uncertain { .. }) => {
                 let _ = self.smoother.push(None, dt_ms);
                 self.intune_ms = 0.0;
-                self.samples_since_confident = self
-                    .samples_since_confident
-                    .saturating_add(raw.len() as u64);
+                // Счётчик растёт на HOP новых сэмплов за кадр (rev 6.2).
+                self.samples_since_confident =
+                    self.samples_since_confident.saturating_add(HOP as u64);
 
                 let max_samples = (u64::from(self.config.hold_ms) * u64::from(fs)) / 1000;
                 let clarity = match estimate {
@@ -425,9 +425,8 @@ impl TunerEngine {
                 if outcome.foreign {
                     // Ручной режим, чужая нота: пара не подсвечивается (4.7).
                     self.intune_ms = 0.0;
-                    self.samples_since_confident = self
-                        .samples_since_confident
-                        .saturating_add(raw.len() as u64);
+                    self.samples_since_confident =
+                        self.samples_since_confident.saturating_add(HOP as u64);
                     let max_samples = (u64::from(self.config.hold_ms) * u64::from(fs)) / 1000;
                     let last = if self.samples_since_confident <= max_samples {
                         self.last.as_ref()
@@ -623,16 +622,23 @@ mod tests {
         assert_eq!(st.note_midi, None);
         assert_eq!(st.string_indices, Vec::<usize>::new());
 
-        // После ноты — удержание в Uncertain в пределах hold_ms (1800 мс).
+        // После ноты — удержание в Uncertain в пределах hold_ms (2500 мс).
         run_frames(&mut e, note::hz(40, 440.0), 3);
         let st = e.process_frame(&mut frame, FS);
         assert_eq!(st.kind, TunerKind::Uncertain);
         assert_eq!(st.note_midi, Some(40));
         assert!(st.cents.is_some());
 
-        // По истечении 1800 мс (1800 * 48000 / 1000 = 86400 сэмплов;
-        // 4096 сэмплов на кадр -> 22 кадра) показание сбрасывается в Silent.
-        for _ in 0..25 {
+        // По истечении 2500 мс (2500 * 48000 / 1000 = 120 000 сэмплов;
+        // HOP = 1024 сэмплов на вызов -> 118 кадров) показание сбрасывается в Silent.
+        // До 117 кадров удержание продолжается:
+        for _ in 0..109 {
+            let s = e.process_frame(&mut frame, FS);
+            assert_eq!(s.kind, TunerKind::Uncertain);
+            assert_eq!(s.note_midi, Some(40));
+        }
+        // Ещё 15 кадров (суммарно 1 + 109 + 15 = 125 кадров > 117.1875):
+        for _ in 0..15 {
             e.process_frame(&mut frame, FS);
         }
         let st = e.process_frame(&mut frame, FS);
