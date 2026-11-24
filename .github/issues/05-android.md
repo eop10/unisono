@@ -4,9 +4,9 @@
 Захват звука на Android и сборка APK с собственным ключом.
 
 ## Задачи
-- [ ] `OboeSource`: `AudioFormat::Float`, `InputPreset::VoiceRecognition`, 48 кГц, `rtrb`.
-- [ ] Kotlin-плагин: `requestMic`, `keepScreenOn`, `vibrate`; регистрация в `MainActivity`.
-- [ ] Манифест: `RECORD_AUDIO`, `VIBRATE`, без `INTERNET`; lifecycle `onStart/onPause`.
+- [x] `OboeSource`: `AudioFormat::Float`, `InputPreset::VoiceRecognition`, 48 кГц, `rtrb`.
+- [x] Kotlin-плагин: `requestMic`, `keepScreenOn`, `vibrate`; регистрация в `MainActivity`.
+- [x] Манифест: `RECORD_AUDIO`, `VIBRATE`, без `INTERNET`; lifecycle `onStart/onPause`.
 - [ ] Настройка `signingConfigs.release` из env; `apksigner verify`.
 - [ ] Тесты на Android 8 и 14; sideload-инструкция в README.
 
