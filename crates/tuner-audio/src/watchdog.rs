@@ -188,13 +188,21 @@ impl<S: AudioSource + 'static> SupervisedCapture<S> {
     /// только когда кадры пришли **после** переоткрытия — свежий старт
     /// без данных попыткой не считается выздоровевшим.
     fn supervise(self: Arc<Self>) {
+        const SLICE_MS: u64 = 25;
         loop {
             if !self.listening.load(Ordering::Acquire) {
                 return;
             }
-            std::thread::sleep(Duration::from_millis(self.cfg.tick_ms));
-            if !self.listening.load(Ordering::Acquire) {
-                return;
+            // Сон нарезами для быстрого отклика на stop() (rev 6.3).
+            let mut elapsed = 0;
+            let total = self.cfg.tick_ms;
+            while elapsed < total {
+                let chunk = (total - elapsed).min(SLICE_MS);
+                std::thread::sleep(Duration::from_millis(chunk));
+                if !self.listening.load(Ordering::Acquire) {
+                    return;
+                }
+                elapsed += chunk;
             }
             // Открытие в процессе (например, TCC-диалог) — не мешаем.
             if self.opening.load(Ordering::Acquire) {

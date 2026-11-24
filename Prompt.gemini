@@ -1,4 +1,4 @@
-# Задача для Gemini 3.8 Flash в Antigravity: rev 6.2 — удержание показания: счётчик в единицах HOP
+# Задача для Gemini 3.8 Flash в Antigravity: rev 6.3 — Space с фокусом на кнопке и быстрое закрытие
 
 Ты работаешь в существующем репозитории **Unisono** (Rust + Tauri 2 + Svelte 5).
 Открой папку проекта в Antigravity и работай в режиме агента: читай файлы, правь код
@@ -6,67 +6,80 @@
 
 - Репозиторий: https://github.com/eop10/unisono
 - Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
-- Последний запушенный коммит — `8ffed9f`; поверх него локально лежит только этот файл
+- Последний запушенный коммит — `2029392`; поверх него локально лежит только этот файл
   (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
-- Это точечная правка #13 по приёмке (**rev 6.2**). Только `tuner-core`, только
-  машина состояний уровня движка.
+- Это точечная правка по приёмке (**rev 6.3**): два дефекта, найденных владельцем.
 
 ## 0. Прочитай перед началом
 
-1. `crates/tuner-core/src/engine.rs`: `process_frame` (ветки `None|Silent|Uncertain`
-   и `foreign`), `dt_ms = HOP * 1000 / fs`, поле `samples_since_confident`,
-   `DEFAULT_HOLD_MS`, тесты удержания (`decay…`, `hold…`).
-2. `crates/tuner-audio/src/lib.rs`: анализатор зовёт `process_frame` каждые **HOP**
-   (1024) новых сэмплов, передавая полное окно (4096).
+1. `ui/src/lib/TunerScreen.svelte` — `onKeyDown` (ветка `Space`, проверка `BUTTON`).
+2. `ui/src/stores/tuner.ts` — `toggleListening`.
+3. `crates/tuner-audio/src/watchdog.rs` — `SupervisedCapture::stop` и цикл
+   `supervise` (`sleep(tick_ms)`), `WatchdogConfig` (`tick_ms = 500`).
+4. `ui/tests/components.test.ts` — существующие тесты клавиш.
 
-## 1. Контекст: почему удержание «моментальное»
+## 1. Контекст: два дефекта приёмки
 
-Приёмка с аудиокартой: после настройки струны показание уходит с экрана примерно
-через **0,45 с** вместо 1800 мс. Причина: счётчик `samples_since_confident` растёт
-на `raw.len()` (**4096**) за вызов, хотя реально добавляется **HOP (1024)** новых
-сэмплов — в 4 раза быстрее реального времени. `dt_ms` при этом честно считается по
-HOP. Тест закрепляет ту же ошибку («4096 сэмплов на кадр -> 22 кадра»).
+- **Space не работает, если фокус на кнопке.** Обработчик умышленно пропускает Space
+  при `target.tagName === 'BUTTON'` («Space нажимает её сам»), но после любого клика
+  по чипу/шестерёнке фокус там и остаётся — Space вместо старт/стопа «жмёт кнопку».
+  Для тюнера Space — глобальное действие; делаем его глобальным.
+- **Долгое закрытие приложения.** `stop()` джойнит наблюдатель, который спит
+  `tick_ms` (500 мс); закрытие ждёт конца сна (+ остановка CoreAudio). Нужен быстрый
+  отклик на стоп.
 
-Владелец просит удержание подольше: поднимаем дефолт до **2500 мс**.
+## 2. Part 1 — Space глобальный
 
-## 2. Part 1 — правка
+`ui/src/lib/TunerScreen.svelte`, ветка `e.code === 'Space'`:
+- не пропускать при фокусе на `BUTTON`: делать `e.preventDefault()`
+  (не даём кнопке отработать Space), при необходимости снять фокус с кнопки
+  (`(document.activeElement as HTMLElement | null)?.blur()`), затем `toggleListening()`;
+- сохранить прежние исключения: поля ввода (`INPUT|SELECT|TEXTAREA`), открытый лист
+  (`sheetOpen`), `e.repeat`;
+- комментарий обновить: «Space — глобальный старт/стоп (6.7)».
+- Тест в `ui/tests/components.test.ts`: при фокусе на кнопке нажатие Space
+  вызывает старт/стоп (а не клик кнопки); в поле ввода и при открытом листе — не
+  вызывает; `event.defaultPrevented === true`.
 
-1. Обе ветки (тишина/uncertain и foreign): инкремент
-   `self.samples_since_confident = self.samples_since_confident.saturating_add(HOP as u64);`
-   вместо `raw.len() as u64`.
-2. `DEFAULT_HOLD_MS`: `1800` → **`2500`**; обновить док-комментарии, где упомянуто
-   1800 (константа и комментарии в `process_frame`).
-3. Тесты: пересчитать кадры по HOP (1024):
-   - 2500 мс → `2500 * 48000 / 1000 = 120 000` сэмплов → ~117 кадров;
-   - удержание видно сразу после начала тишины (первый же кадр — `Uncertain`
-     с последней нотой), держится до ~117 кадров, после — `Silent` с очищенными полями;
-   - восстановление новым сигналом во время удержания — сразу `Tracking`;
-   - комментарий «4096 сэмплов на кадр -> 22 кадра» заменить на HOP-арифметику.
+## 3. Part 2 — быстрое закрытие
+
+`crates/tuner-audio/src/watchdog.rs`:
+- заменить одиночный `std::thread::sleep(tick_ms)` в `supervise` на сон нарезами
+  (например, по 25–50 мс) с проверкой `listening` после каждого нареза: при `false`
+  выходить сразу. Поведение watchdog по логике не меняется (опрос раз в `tick_ms`),
+  меняется только скорость реакции на стоп (join наблюдателя ≤ ~50 мс).
+- существующие тесты watchdog не ослаблять; тест `stop_is_idempotent_and_restart_works`
+  должен по-прежнему проходить.
 
 Гейт:
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test -p tuner-core
+cargo test -p tuner-audio
 cargo test --workspace
+npm --prefix ui run check
+npm --prefix ui run test
+npm --prefix ui run build
 ```
 
-Коммит (включая этот файл): `engine: hold counter in HOP units, default 2500 ms (rev 6.2)`
+Коммит (включая этот файл): `ui,audio: global Space hotkey and fast capture stop (rev 6.3)`
 
-## 3. Part 2 — пуш, CI, отчёт
+## 4. Part 3 — пуш, CI, отчёт
 
 ```bash
 git push origin main
 gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
-Отчёт в чат и коротко в #13: что изменено, вывод гейтов, номер зелёного CI-run.
-Владельцу: пересобрать `npm run tauri build -- --debug --bundles app` и проверить
-затухание на гитаре — показание должно замирать на ~2,5 с.
+Отчёт в чат и коротко в #6 (или #13 — куда ближе по смыслу): что изменено, вывод
+гейтов, номер зелёного CI-run. Владельцу: пересобрать
+`npm run tauri build -- --debug --bundles app` и проверить: Space работает после кликов
+по интерфейсу; закрытие быстрое (заметная часть прежней задержки уйдёт только в
+release-сборке — debug всегда медленнее).
 
-## 4. Что НЕ делать
+## 5. Что НЕ делать
 
-- Не трогать DSP-формулы, `PitchDetector`, UI, устройство ввода, хранилище,
-  Android-код, `docs/`.
-- Не менять остальные инварианты: «в строе» 250 мс, гистерезис, унисоны.
+- Не трогать DSP, `PitchDetector`, движок, хранилище, устройство ввода,
+  Android-код, `docs/`, `brand/`, `design/`.
+- Не менять логику watchdog (пороги, переоткрытия) — только скорость реакции на стоп.

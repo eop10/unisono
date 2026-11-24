@@ -52,7 +52,7 @@
                 : 'even',
   );
 
-  /** 6.7: Space — старт/стоп; `1..8` — ручная струна (повтор — авто);
+  /** 6.7: Space — глобальный старт/стоп (rev 6.3); `1..8` — ручная струна (повтор — авто);
    *  ↑/↓ — A4 ±0,1. В полях ввода и при открытом листе не перехватываем. */
   function onKeyDown(e: KeyboardEvent): void {
     const target = e.target as HTMLElement | null;
@@ -61,10 +61,10 @@
     const sheetOpen = get(overlay) !== null;
 
     if (e.code === 'Space') {
-      // Фокус на кнопке: Space нажимает её сам, не дублируем.
-      if (target && target.tagName === 'BUTTON') return;
+      // Space — глобальный старт/стоп (6.7, rev 6.3).
       if (e.repeat || sheetOpen) return;
       e.preventDefault();
+      (document.activeElement as HTMLElement | null)?.blur();
       void toggleListening();
       return;
     }

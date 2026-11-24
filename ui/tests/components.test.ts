@@ -263,6 +263,42 @@ describe('hotkeys (6.7)', () => {
     expect(get(settings).referenceHz).toBe(before);
     expect(ipc.setReference).not.toHaveBeenCalled();
   });
+
+  it('space toggles listening even when focus is on a button (rev 6.3)', async () => {
+    const { container } = render(TunerScreen);
+    await tick();
+    const btn = container.querySelector('.chip') as HTMLButtonElement;
+    btn.focus();
+    expect(document.activeElement).toBe(btn);
+
+    const btnEvent = new KeyboardEvent('keydown', { code: 'Space', bubbles: true, cancelable: true });
+    btn.dispatchEvent(btnEvent);
+    expect(btnEvent.defaultPrevented).toBe(true);
+    await tick();
+    await tick();
+    expect(ipc.startListening).toHaveBeenCalled();
+
+    // В поле ввода Space не перехватывается
+    vi.clearAllMocks();
+    editorContext.set({ instrumentId: 'guitar', tuningId: null });
+    const { container: editorContainer } = render(TuningEditor);
+    await tick();
+    const input = editorContainer.querySelector('#te-name') as HTMLInputElement;
+    input.focus();
+    const inputEvent = new KeyboardEvent('keydown', { code: 'Space', bubbles: true, cancelable: true });
+    input.dispatchEvent(inputEvent);
+    expect(inputEvent.defaultPrevented).toBe(false);
+    expect(ipc.startListening).not.toHaveBeenCalled();
+
+    // При открытом листе Space не перехватывается
+    vi.clearAllMocks();
+    overlay.set('settings');
+    await tick();
+    const sheetEvent = new KeyboardEvent('keydown', { code: 'Space', bubbles: true, cancelable: true });
+    window.dispatchEvent(sheetEvent);
+    expect(sheetEvent.defaultPrevented).toBe(false);
+    expect(ipc.startListening).not.toHaveBeenCalled();
+  });
 });
 
 describe('settings sheet: input device row (stage 6)', () => {
