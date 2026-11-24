@@ -91,6 +91,11 @@ export async function getPlatform(): Promise<Platform> {
   return await invoke<Platform>('platform');
 }
 
+/** Проверка фактического статуса разрешения микрофона. */
+export async function hasMicPermission(): Promise<boolean> {
+  return await invoke<boolean>('has_mic_permission');
+}
+
 /** Запрос разрешения микрофона (на Android — через Kotlin плагин). */
 export async function requestMic(): Promise<void> {
   await invoke('request_mic');

@@ -25,6 +25,7 @@ vi.mock('../src/ipc/commands', () => ({
   savePreset: vi.fn(async (_p: unknown) => {}),
   deletePreset: vi.fn(async (_id: string) => {}),
   getPlatform: vi.fn(async () => 'desktop' as const),
+  hasMicPermission: vi.fn(async () => false),
   requestMic: vi.fn(async () => {}),
   keepScreenOn: vi.fn(async (_enabled: boolean) => {}),
   vibrate: vi.fn(async () => {}),
@@ -372,6 +373,49 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
       expect(get(listening)).toBe(false);
       expect(get(tuner).kind).toBe('nopermission');
       expect(ipc.keepScreenOn).toHaveBeenCalledWith(false);
+    });
+
+    it('refines nopermission to error if hasMicPermission resolves to true', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
+      vi.mocked(ipc.requestMic).mockRejectedValueOnce('permission denied');
+      vi.mocked(ipc.hasMicPermission).mockResolvedValueOnce(true);
+      await startListening();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(get(tuner).kind).toBe('error');
+    });
+
+    it('keeps nopermission if hasMicPermission resolves to false', async () => {
+      vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
+      vi.mocked(ipc.requestMic).mockRejectedValueOnce('permission denied');
+      vi.mocked(ipc.hasMicPermission).mockResolvedValueOnce(false);
+      await startListening();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(get(tuner).kind).toBe('nopermission');
+    });
+
+    it('refines channel nopermission to error if hasMicPermission is true', async () => {
+      let messageHandler: ((s: TunerState) => void) | undefined;
+      vi.mocked(ipc.startListening).mockImplementationOnce(async (channel: unknown) => {
+        messageHandler = (channel as Channel<TunerState>).onmessage;
+      });
+      vi.mocked(ipc.hasMicPermission).mockResolvedValueOnce(true);
+      await startListening();
+      messageHandler!({
+        kind: 'nopermission',
+        cents: null,
+        clarity: 0,
+        db: -60,
+        f0: null,
+        noteMidi: null,
+        stringIndices: [],
+        targetHz: null,
+      });
+      expect(get(tuner).kind).toBe('nopermission');
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(get(tuner).kind).toBe('error');
     });
 
     it('clears screen flag when stopped', async () => {

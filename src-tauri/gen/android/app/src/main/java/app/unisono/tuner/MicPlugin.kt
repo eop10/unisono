@@ -18,6 +18,16 @@ import app.tauri.plugin.PluginManager
 @TauriPlugin
 class MicPlugin(private val activity: Activity) : Plugin(activity) {
 
+    private fun Invoke.resolve(data: Boolean) = resolveObject(data)
+
+    @Command
+    fun hasMicPermission(invoke: Invoke) {
+        invoke.resolve(
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
     @Command
     fun requestMic(invoke: Invoke) {
         if (ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)

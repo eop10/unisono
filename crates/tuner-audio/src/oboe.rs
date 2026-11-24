@@ -126,6 +126,8 @@ fn map_oboe_error(err: OboeError) -> AudioError {
     match err {
         // В AAudio/Oboe отсутствие разрешения RECORD_AUDIO на уровне AudioFlinger
         // возвращает Error::Unavailable или Error::Internal.
+        // Классификация сохраняется для аудио-слоя, но UI асинхронно уточняет
+        // фактический статус разрешения через `hasMicPermission` (rev 5.1).
         OboeError::Unavailable | OboeError::Internal => AudioError::PermissionDenied,
         other => AudioError::Device(format!("{other:?}")),
     }

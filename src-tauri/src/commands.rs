@@ -140,6 +140,24 @@ pub fn platform() -> &'static str {
     }
 }
 
+/// Проверка фактического статуса разрешения микрофона (на Android — через Kotlin MicPlugin; на desktop — true).
+#[tauri::command]
+pub fn has_mic_permission(app: AppHandle) -> Result<bool, String> {
+    log::debug!("has_mic_permission");
+    #[cfg(target_os = "android")]
+    {
+        let mic = app.state::<crate::MicHandle>();
+        mic.0
+            .run_mobile_plugin::<bool>("hasMicPermission", ())
+            .map_err(|e| format!("ошибка проверки разрешения: {e}"))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(true)
+    }
+}
+
 /// Запрос разрешения микрофона (на Android — через Kotlin MicPlugin; на desktop — успех).
 #[tauri::command]
 pub async fn request_mic(app: AppHandle) -> Result<(), String> {

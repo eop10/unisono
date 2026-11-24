@@ -7,6 +7,7 @@ import { Channel } from '@tauri-apps/api/core';
 import type { TunerKind, TunerState } from '../lib/types';
 import {
   getPlatform,
+  hasMicPermission,
   keepScreenOn,
   requestMic,
   selectString as ipcSelectString,
@@ -53,6 +54,17 @@ function audioErrorState(err: unknown): TunerState {
   return { ...SILENT, kind };
 }
 
+/** Уточнение ошибки доступа: если фактически разрешение есть, значит сбой устройства (rev 5.1). */
+function refinePermissionError(): void {
+  void hasMicPermission()
+    .then((hasPerm) => {
+      if (hasPerm && get(tuner).kind === 'nopermission') {
+        tuner.set({ ...SILENT, kind: 'error' });
+      }
+    })
+    .catch(() => {});
+}
+
 export async function startListening(): Promise<void> {
   try {
     const platform = await getPlatform();
@@ -61,7 +73,11 @@ export async function startListening(): Promise<void> {
     }
   } catch (e) {
     listening.set(false);
-    tuner.set(audioErrorState(e));
+    const errState = audioErrorState(e);
+    tuner.set(errState);
+    if (errState.kind === 'nopermission') {
+      refinePermissionError();
+    }
     void keepScreenOn(false);
     return;
   }
@@ -80,6 +96,9 @@ export async function startListening(): Promise<void> {
     }
     prevKind = state.kind;
     tuner.set(state);
+    if (state.kind === 'nopermission') {
+      refinePermissionError();
+    }
   };
   // Сразу в «Слушаю…»: после «Повторить» не мигают старые цифры (ревью 4A).
   tuner.set({ ...SILENT });
@@ -89,7 +108,11 @@ export async function startListening(): Promise<void> {
     void keepScreenOn(true);
   } catch (e) {
     listening.set(false);
-    tuner.set(audioErrorState(e));
+    const errState = audioErrorState(e);
+    tuner.set(errState);
+    if (errState.kind === 'nopermission') {
+      refinePermissionError();
+    }
     void keepScreenOn(false);
   }
 }

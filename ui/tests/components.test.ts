@@ -24,6 +24,7 @@ vi.mock('../src/ipc/commands', () => ({
   savePreset: vi.fn(async () => {}),
   deletePreset: vi.fn(async () => {}),
   getPlatform: vi.fn(async () => 'desktop' as const),
+  hasMicPermission: vi.fn(async () => true),
   requestMic: vi.fn(async () => {}),
   keepScreenOn: vi.fn(async () => {}),
   vibrate: vi.fn(async () => {}),

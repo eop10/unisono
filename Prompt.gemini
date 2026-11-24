@@ -1,202 +1,146 @@
-# Задача для Gemini 3.8 Flash в Antigravity: этап 5 — Android: oboe, Kotlin-шим, подписанный APK
+# Задача для Gemini 3.8 Flash в Antigravity: rev 5.1 — правки ревью этапа 5
 
-Ты работаешь в существующем репозитории **Unisono** (мультиинструментальный тюнер,
-Rust + Tauri 2 + Svelte 5). Открой папку проекта в Antigravity и работай в режиме агента:
-читай файлы, правь код и запускай команды сам. Не проси пользователя копировать код.
+Ты работаешь в существующем репозитории **Unisono** (Rust + Tauri 2 + Svelte 5).
+Открой папку проекта в Antigravity и работай в режиме агента: читай файлы, правь код
+и запускай команды сам. Не проси пользователя копировать код.
 
 - Репозиторий: https://github.com/eop10/unisono
 - Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
-- Последний запушенный коммит — `fdce3dd`; поверх него локально лежит только этот файл
+- Последний запушенный коммит — `064858a`; поверх него локально лежит только этот файл
   (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
-- Этапы 0–4 закрыты (macOS принят, issue #5). Это **этап 5 — Android** (issue #6):
-  реальный захват звука через `oboe`, разрешения через Kotlin-плагин, release-APK,
-  подписанный ключом владельца из env.
+- Этап 5 реализован и принят по коду; это точечная правка по ревью (**rev 5.1**).
+  Не начинать этап 6; не менять подпись, манифест, DSP.
 
 ## 0. Прочитай перед началом
 
-1. `HANDOFF.md` — правила; §8 «Версии и ключи» (подпись APK из переменных окружения).
-2. `docs/source/07_platform.md` §7.1.1–7.1.4 — манифест, oboe-захват, Kotlin-плагин,
-   жизненный цикл; §7.3 — почему oboe, а не cpal.
-3. `docs/source/08_build_test.md` §8.4 (ручной чек-лист, п. 15 — Android 8 и 14),
-   §8.6 (релизный чек-лист Android).
-4. `.github/issues/05-android.md` — зеркало этапа 5.
-5. `crates/tuner-audio/src/android_stub.rs` и `lib.rs` (cfg-врезка `PlatformSource`).
-6. `src-tauri/gen/android/` — текущее состояние: манифест (сейчас содержит `INTERNET`
-   — это лишнее, см. Part 2), `MainActivity`, `build.gradle.kts` (minSdk 26,
-   targetSdk 37, `versionCode`/`versionName` из tauri.properties).
+1. `crates/tuner-audio/src/oboe.rs` — `map_oboe_error` (правишь смысл классификации).
+2. `src-tauri/gen/android/app/src/main/java/app/unisono/tuner/MicPlugin.kt`.
+3. `src-tauri/src/commands.rs` — `platform`/`request_mic`/`keep_screen_on`/`vibrate`.
+4. `ui/src/stores/tuner.ts` — поток состояний, `isPermissionDenied`, `audioErrorState`.
+5. `ui/tests/stores.test.ts` — тесты android-веток.
 
-## 1. Правила этапа
+## 1. Контекст ревью (что подтверждено и что чиним)
 
-- Ключи и пароли **не запрашивать, не коммитить, не логировать**: подпись только через
-  env `UNISONO_KEYSTORE`, `UNISONO_STORE_PASSWORD`, `UNISONO_KEY_ALIAS`,
-  `UNISONO_KEY_PASSWORD` (keystore создан владельцем и лежит вне репозитория).
-- `INTERNET` **не возвращать** в манифест (ФТ-12/НФТ-13). Следствие: `tauri android dev`
-  без `INTERNET` не работает — так задумано; офлайн проверять только на release-сборке,
-  «проблему» dev-сервера не чинить.
-- DSP-формулы и контракт `PitchDetector` не менять; `tuner-core` не трогать;
-  `unsafe` — только внутри `tuner-audio`.
-- `docs/`, `brand/`, `design/` не трогать (правки docs — отдельное разрешение владельца,
-  в этом промпте их нет). `README.md` — можно.
-- Коммит после каждой части; push один раз в конце. Гейт упал — стоп, не обходи и не
-  помечай ошибкой окружения; напиши в чат команду, вывод и файл.
-- Первый коммит Part 0 включает и этот файл промпта (лежит в дереве незакоммиченным).
+Подтверждено: oboe-захват, манифест без `INTERNET` (дамп APK: только `RECORD_AUDIO`,
+`VIBRATE`), Kotlin-плагин, lifecycle, подпись из env (release без env падает с понятной
+ошибкой — `BUILD FAILED`), `versionCode 1000`/`versionName 0.1.0`, native-code
+arm64-v8a + armeabi-v7a, CI зелёный.
 
-## 2. Part 0 — стабилизировать флейк-тест (P0)
+Чинится в rev 5.1:
 
-`crates/tuner-audio/src/watchdog.rs`, тест `watchdog_resets_attempts_when_data_flows`
-(~строка 468): жёсткий `sleep(1500 мс)` + assertion `is_listening()`. Под нагрузкой CI
-бюджет попыток `fast_cfg()` исчерпывается раньше, чем кадры сбрасывают счётчик —
-падение уже было (CI run 45324113750, Linux). Чинить **только тест и/или тестовый
-конфиг**, прод-код не трогать: либо poll-цикл с дедлайном (~5 с), фиксирующий инварианты
-«listening жив» и «было переоткрытие», либо более щедрые бюджеты `fast_cfg` для этого
-теста. Остальные watchdog-тесты не ослаблять.
+- **P1.** `oboe::map_oboe_error` маппит `Unavailable | Internal → PermissionDenied`.
+  На прошивках занятый/недоступный микрофон даёт те же ошибки — пользователь увидит
+  экран «нет разрешения» вместо «сбой устройства». Нужно после классификации уточнять
+  фактический статус разрешения.
+- **P2.** Вибрация на каждом переходе в «в строе» без троттлинга: при дребезге
+  intune↔above (каждые ~250 мс) вибратор молотит. Нужен минимальный интервал.
+- **P2.** Зеркало этапа и гигиена: чекбокс подписи не отмечен, в
+  `gen/android/app/build/outputs/.../release/` лежит устаревший
+  `app-universal-release-unsigned.apk` от сборки до коммита подписи (build-каталог
+  gitignore-нут — в индексе чисто).
 
-Гейт:
+Правила: `docs/`, `brand/`, `design/` не трогать; DSP-формулы и контракт
+`PitchDetector` не менять; `unsafe` только в `tuner-audio`; keystore не запрашивать.
+Коммит после каждой части; push в конце. Гейт упал — стоп, команда/вывод/файл в чат.
+Первый коммит включает этот файл.
 
-```bash
-cargo test -p tuner-audio
-for i in $(seq 1 10); do cargo test -p tuner-audio watchdog_resets_attempts || exit 1; done
-```
+## 2. Part 1 — классификация ошибки микрофона (P1)
 
-Коммит: `test: stabilize watchdog reopen test under CI load (stage 5 part 0)`
-
-## 3. Part 1 — OboeSource
-
-1. `crates/tuner-audio/Cargo.toml`: зависимость `oboe` **только** для Android:
-   `[target.'cfg(target_os = "android")'.dependencies]`; версию подобрать под
-   NDK 26.1.10909125.
-2. Новый `crates/tuner-audio/src/oboe.rs` по образцу docs §7.1.2: `AudioFormat::Float`,
-   mono, `set_sample_rate(48_000)`, `InputPreset::VoiceRecognition` (без AGC/NS);
-   callback толкает сэмплы в `rtrb::Producer` (переполнение — счётчик, не паника);
-   открытие/закрытие в потоке-владельце; контракт `AudioSource`, фактическая частота —
-   из созданного потока. Отсутствие разрешения при открытии → `AudioError::PermissionDenied`
-   (сверить коды ошибок oboe/AAudio по документации выбранной версии); прочие ошибки →
-   `AudioError::Device`.
-3. `lib.rs`: `#[cfg(target_os = "android")] pub use android_stub::StubSource as
-   PlatformSource;` → заменить на `OboeSource`; `android_stub` удалить, если ссылок
-   не осталось. Хостовые сборки (macOS/Linux/CI rust) oboe не должны видеть вообще.
-
-Гейт:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
-export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
-export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
-export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$NDK_TOOLCHAIN/bin/armv7a-linux-androideabi26-clang"
-cargo check -p app --target aarch64-linux-android
-cargo check -p app --target armv7-linux-androideabi
-```
-
-Коммит: `audio: OboeSource replaces android stub (stage 5)`
-
-## 4. Part 2 — манифест, Kotlin-плагин, lifecycle
-
-1. `src-tauri/gen/android/app/src/main/AndroidManifest.xml`:
-   - **убрать** `<uses-permission android:name="android.permission.INTERNET" />`
-     (его добавил генератор Tauri — это нарушение НФТ-13);
-   - добавить `RECORD_AUDIO`, `VIBRATE` и
-     `<uses-feature android:name="android.hardware.microphone" android:required="true" />`;
-   - `android:allowBackup="false"` (§7.1.1).
-2. Kotlin-плагин по docs §7.1.3: `MicPlugin` с командами `requestMic` (проверка
-   разрешения + запрос через Activity, pending-invoke), `keepScreenOn` (включение
-   **и выключение** флага — параметр или два метода, по §7.1.4), `vibrate`
-   (one-shot 20 мс). Регистрация в `MainActivity`. Точные имена API сверить с
-   текущей версией Tauri 2 (`Plugin`, `@Command`, `Invoke`) — docs предупреждает,
-   что имена дрейфуют между версиями.
-3. `src-tauri`: мосты — команды `request_mic`, `keep_screen_on`, `vibrate`
-   (на Android — через мобильный плагин, `run_mobile_plugin`; на desktop — тихие
-   заглушки-успехи), и команда `platform()` → `"android" | "desktop"` по cfg,
-   чтобы UI ветвился без новых зависимостей.
-4. UI (`ui/src`): на Android перед автостартом `startListening()` — `requestMic`;
-   отказ → экран `NoPermission` (уже есть, не переделывать). `keepScreenOn(true)` при
-   активном слушании, `false` при стопе. Вибрация 20 мс при «в строе», только если
-   `settings.haptics`. Обёртки в `ui/src/ipc` с типами, ветвление по `platform()`.
-5. Жизненный цикл §7.1.4: `onPause` → `stop_listening` + снять флаг; возврат на экран —
-   обычный автостарт с `requestMic` при необходимости. Foreground service не делать.
+1. `MicPlugin.kt`: новая команда
+   ```kotlin
+   @Command
+   fun hasMicPermission(invoke: Invoke) {
+       invoke.resolve(
+           ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)
+               == PackageManager.PERMISSION_GRANTED
+       )
+   }
+   ```
+   (без диалога, только чтение статуса).
+2. `src-tauri/src/commands.rs`: команда
+   `pub fn has_mic_permission(app: AppHandle) -> Result<bool, String>` — на Android
+   через `run_mobile_plugin::<bool>("hasMicPermission", ())`, на desktop — `Ok(true)`.
+   Зарегистрировать в `invoke_handler`.
+3. `ui/src/ipc/commands.ts`: обёртка `hasMicPermission(): Promise<boolean>`.
+4. `ui/src/stores/tuner.ts`: когда приходит `permissionDenied` (в catch после
+   `ipcStart`) или состояние `nopermission` из канала — **асинхронно** один раз
+   запросить `hasMicPermission()`:
+   - `false` → как сейчас: экран `NoPermission` («Перейти в настройки»);
+   - `true` → перезаписать состояние на **Error** («сбой устройства», тексты
+     `error_title`/`error_text` уже есть): разрешение на месте, значит ошибка потока.
+   Не блокировать обработку состояний; гонки гасить проверкой, что состояние всё ещё
+   `nopermission` в момент ответа.
+5. `oboe.rs`: обновить комментарий `map_oboe_error` — классификация
+   `Unavailable|Internal` остаётся, но теперь её уточняет UI-проверка статуса.
+6. Тесты (`ui/tests/stores.test.ts`): при mock `hasMicPermission → true` экран
+   **Error**, при `false` — **NoPermission**; существующие тесты не ломать.
 
 Гейт:
 
 ```bash
 npm --prefix ui run check
 npm --prefix ui run test
-npm --prefix ui run build
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+export NDK_TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/bin/aarch64-linux-android26-clang"
+export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
+export AR_aarch64_linux_android="$NDK_TOOLCHAIN/bin/llvm-ar"
 cargo check -p app --target aarch64-linux-android
-# debug-APK локально (как в CI):
-npm run tauri android build -- --apk --target aarch64 --target armv7
 ```
 
-Коммит: `android: mic plugin, manifest permissions, lifecycle (stage 5)`
+Коммит: `android: distinguish permission from device errors via has_mic_permission (rev 5.1)`
 
-## 5. Part 3 — release-подпись из env
+## 3. Part 2 — троттлинг вибрации (P2)
 
-1. `src-tauri/gen/android/app/build.gradle.kts`: `signingConfigs.release` читает
-   `System.getenv("UNISONO_KEYSTORE")` / `UNISONO_STORE_PASSWORD` / `UNISONO_KEY_ALIAS` /
-   `UNISONO_KEY_PASSWORD`. Env не заданы → сборка release падает с понятной ошибкой;
-   **фолбэка на debug-подпись нет**. Пути и секреты в файлы не писать.
-2. Собрать release-APK. Значения env задаст владелец перед запуском; если в текущей
-   сессии их нет — **не запрашивать**: собрать debug-подпись не нужно, просто собрать
-   release только если env заданы, иначе зафиксировать в отчёте «release-подпись ждёт
-   env владельца» и проверить конфигурацию сборкой с пустыми env (должна упасть
-   с понятной ошибкой — это ожидаемо и записывается как результат).
+`ui/src/stores/tuner.ts`: вибрация на переходе в `intune` — не чаще одного раза
+в **1000 мс** (модульная метка `lastVibrateAt`). Тест: два быстрых перехода в `intune`
+подряд → ровно один вызов `vibrate()`; после паузы > 1 с — снова вибрирует.
+Гейт: `npm --prefix ui run check && npm --prefix ui run test`.
+Коммит: `ui: throttle in-tune vibration (rev 5.1)`
+
+## 4. Part 3 — зеркало и гигиена (P2)
+
+1. `.github/issues/05-android.md`: отметить `[x]` «Настройка `signingConfigs.release`
+   из env» (факт подтверждён: release без env падает); пункт «Тесты на Android 8 и 14;
+   sideload-инструкция в README» переформулировать: README — сделано (`[x]` в части
+   README), тесты на устройствах — остаются ручными (отдельный невыполненный пункт).
+2. Удалить локальный устаревший артефакт
+   `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`
+   (сборка до коммита подписи; build-каталог в `.gitignore`, в индекс не попадает).
+   Не пересобирать release без env — падение уже проверено.
+Коммит: `chore: track stage-5 items and drop stale unsigned apk (rev 5.1)`
+
+## 5. Part 4 — гейты, пуш, отчёт
+
+Полные гейты (повторить после всех правок):
 
 ```bash
-npm run tauri android build -- --apk --target aarch64 --target armv7
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+npm --prefix ui run check
+npm --prefix ui run test
+npm --prefix ui run build
+cargo check -p app --target aarch64-linux-android   # env выше
+cargo check -p app --target armv7-linux-androideabi # env выше (armv7a-linux-androideabi26-clang)
+npm run tauri android build -- --apk --target aarch64 --target armv7   # debug
 ```
 
-3. Проверки (если release собран):
-
-```bash
-APK=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
-BT=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)
-"$BT/apksigner" verify --print-certs "$APK"
-"$BT/aapt2" dump permissions "$APK"   # RECORD_AUDIO и VIBRATE есть, INTERNET нет
-"$BT/aapt2" dump badging "$APK" | grep -E "versionCode|versionName|native-code"
-shasum -a 256 "$APK"
-```
-
-Ожидаемо: `versionCode 1`, `versionName 0.1.0`, native-code arm64-v8a + armeabi-v7a.
-
-Коммит: `android: release signing from env (stage 5)`
-
-## 6. Part 4 — README, зеркала, полные гейты, пуш, отчёт
-
-1. `README.md`: раздел sideload для Android — «разрешите установку из неизвестных
-   источников», Android 8.0+, arm64-v8a/armeabi-v7a, обновление поверх тем же ключом.
-2. `.github/issues/05-android.md`: отметить чекбоксы, закрытые кодом; ручные пункты
-   (тесты на устройствах, apksigner на релизе) оставить открытыми.
-3. Полные гейты — повторить все из Parts 1–2 (fmt, clippy, test, ui × 3, android check
-   × 2 таргета) и флейк-гейт Part 0.
-4. Пуш:
+Затем:
 
 ```bash
 git push origin main
 gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
-CI: все четыре job зелёные (`rust`, `ui`, `desktop`, `android`); в артефакте `apk` —
-debug-сборка как раньше.
+Отчёт в чат и коротко в issue #6: коммиты; вывод гейтов; номер зелёного CI-run; какой
+APK собран (путь). Ручная приёмка на Android 8/14 — после, владельцем.
 
-Отчёт в конце (в чат и коротко комментарием в issue #6):
+## 6. Что НЕ делать
 
-1. Коммиты по частям (sha, сообщения).
-2. Вывод гейтов (команды + результат), номер зелёного CI-run.
-3. APK: путь, SHA-256, вывод `apksigner verify`, дамп permissions (подтверждение
-   «нет INTERNET»), versionCode/versionName/native-code.
-4. Что осталось владельцу вручную: чек-лист 8.4 п. 15 на Android 8 и Android 14
-   (разрешение/отказ/отзыв, микрофон, вибрация, keep-screen-on), установка release-APK
-   с env-подписью, обновление поверх с тем же ключом, офлайн-поведение release-сборки.
-5. Риски: поведение `InputPreset::VoiceRecognition` на прошивках, связка oboe↔NDK.
-
-## 7. Что НЕ делать
-
-- Не запрашивать и не коммитить keystore/пароли; не логировать их значения.
-- Не возвращать `INTERNET`; не чинить `tauri android dev`.
 - Не трогать `docs/`, `brand/`, `design/`, DSP-формулы, контракт `PitchDetector`,
-  `tuner-core`.
-- Не делать foreground service, iOS, Google Play, не публиковать релиз 0.1.0.
-- Не менять `version` 0.1.0 и `versionCode 1`.
+  манифест, конфиг подписи.
+- Не запрашивать keystore/пароли; не собирать release без env.
+- Не начинать этап 6 (#12, #13), не публиковать релиз 0.1.0.

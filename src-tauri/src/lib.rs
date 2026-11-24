@@ -50,6 +50,7 @@ pub fn run() {
             commands::save_preset,
             commands::delete_preset,
             commands::platform,
+            commands::has_mic_permission,
             commands::request_mic,
             commands::keep_screen_on,
             commands::vibrate,
