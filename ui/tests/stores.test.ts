@@ -24,6 +24,8 @@ vi.mock('../src/ipc/commands', () => ({
   getPresets: vi.fn(async () => [] as { id: string; instrumentId: string; name: string; strings: number[] }[]),
   savePreset: vi.fn(async (_p: unknown) => {}),
   deletePreset: vi.fn(async (_id: string) => {}),
+  getInputDevices: vi.fn(async () => []),
+  setInputDevice: vi.fn(async (_name: unknown) => {}),
   getPlatform: vi.fn(async () => 'desktop' as const),
   hasMicPermission: vi.fn(async () => false),
   requestMic: vi.fn(async () => {}),
@@ -335,7 +337,17 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
     expect(ipc.setTolerance).toHaveBeenLastCalledWith(2);
     expect(ipc.setSensitivity).toHaveBeenLastCalledWith('low');
     expect(ipc.setLowRange).toHaveBeenLastCalledWith(true);
+    expect(ipc.setInputDevice).toHaveBeenLastCalledWith(null);
     expect(ipc.selectString).toHaveBeenLastCalledWith(null);
+  });
+
+  it('applySettingsToEngine sends non-null inputDevice', async () => {
+    settings.set({
+      ...DEFAULT_SETTINGS,
+      inputDevice: 'Studio Mic',
+    });
+    await applySettingsToEngine();
+    expect(ipc.setInputDevice).toHaveBeenLastCalledWith('Studio Mic');
   });
 
   it('chromatic settings switch the engine without a tuning', async () => {

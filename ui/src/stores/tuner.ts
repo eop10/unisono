@@ -6,7 +6,7 @@ import { get, writable } from 'svelte/store';
 import { Channel } from '@tauri-apps/api/core';
 import type { TunerKind, TunerState } from '../lib/types';
 import {
-  getPlatform,
+  getPlatform as ipcGetPlatform,
   hasMicPermission,
   keepScreenOn,
   requestMic,
@@ -35,6 +35,13 @@ export const listening = writable(false);
 let prevKind: TunerKind = 'silent';
 let lastVibrateAt = 0;
 let platformCache: Platform | null = null;
+
+export async function getPlatform(): Promise<Platform> {
+  if (platformCache === null) {
+    platformCache = await ipcGetPlatform();
+  }
+  return platformCache;
+}
 
 export function resetPlatformCache(): void {
   platformCache = null;

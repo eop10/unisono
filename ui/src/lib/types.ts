@@ -68,6 +68,7 @@ export interface Settings {
   lowRange: boolean;
   haptics: boolean;
   sound: boolean;
+  inputDevice: string | null;
   /** UI не показывает; сохраняется в settings.json (5.3). */
   onboardingDone: boolean;
 }

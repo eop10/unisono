@@ -10,6 +10,7 @@ import {
   selectInstrument as ipcSelectInstrument,
   selectTuning as ipcSelectTuning,
   selectString as ipcSelectString,
+  setInputDevice as ipcSetInputDevice,
   setLowRange as ipcSetLowRange,
   setReference as ipcSetReference,
   setSensitivity as ipcSetSensitivity,
@@ -19,6 +20,8 @@ import {
 } from '../ipc/commands';
 import { catalog, tuningsByInstrument, tuningsFor } from './catalog';
 import { customs } from './customs';
+
+export { getPlatform } from './tuner';
 
 export const DEFAULT_SETTINGS: Settings = {
   referenceHz: 440,
@@ -33,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lowRange: false,
   haptics: true,
   sound: false,
+  inputDevice: null,
   onboardingDone: false,
 };
 
@@ -75,7 +79,11 @@ function scheduleSave(): void {
 export async function loadSettings(): Promise<void> {
   try {
     const stored = await ipcGetSettings();
-    settings.set(stored);
+    settings.set({
+      ...DEFAULT_SETTINGS,
+      ...stored,
+      inputDevice: stored.inputDevice ?? null,
+    });
     lastTuning.set(stored.instrumentId, stored.tuningId);
   } catch {
     // Нет IPC или хранилища — остаёмся на дефолтах.
@@ -109,6 +117,7 @@ export async function applySettingsToEngine(): Promise<void> {
     ipcSetTolerance(s.toleranceCents),
     ipcSetSensitivity(s.sensitivity),
     ipcSetLowRange(s.lowRange),
+    ipcSetInputDevice(s.inputDevice),
     ipcSelectString(null),
   ]);
 }
@@ -166,6 +175,9 @@ export function updateSetting<K extends keyof Settings>(key: K, value: Settings[
     case 'lowRange':
       void ipcSetLowRange(value as boolean);
       break;
+    case 'inputDevice':
+      void ipcSetInputDevice(value as string | null);
+      break;
   }
 }
 
@@ -182,6 +194,7 @@ export function resetSettings(): void {
   void ipcSetTolerance(DEFAULT_SETTINGS.toleranceCents);
   void ipcSetSensitivity(DEFAULT_SETTINGS.sensitivity);
   void ipcSetLowRange(DEFAULT_SETTINGS.lowRange);
+  void ipcSetInputDevice(null);
   void ipcSelectString(null);
 }
 

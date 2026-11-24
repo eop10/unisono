@@ -23,6 +23,8 @@ vi.mock('../src/ipc/commands', () => ({
   getPresets: vi.fn(async () => []),
   savePreset: vi.fn(async () => {}),
   deletePreset: vi.fn(async () => {}),
+  getInputDevices: vi.fn(async () => []),
+  setInputDevice: vi.fn(async () => {}),
   getPlatform: vi.fn(async () => 'desktop' as const),
   hasMicPermission: vi.fn(async () => true),
   requestMic: vi.fn(async () => {}),
@@ -31,6 +33,7 @@ vi.mock('../src/ipc/commands', () => ({
 }));
 
 import * as ipc from '../src/ipc/commands';
+import SettingsSheet from '../src/lib/SettingsSheet.svelte';
 import TunerScreen from '../src/lib/TunerScreen.svelte';
 import TuningEditor from '../src/lib/TuningEditor.svelte';
 import type { TunerState } from '../src/lib/types';
@@ -38,7 +41,7 @@ import { loadCatalog } from '../src/stores/catalog';
 import { customs } from '../src/stores/customs';
 import { editorContext, overlay } from '../src/stores/overlay';
 import { DEFAULT_SETTINGS, settings } from '../src/stores/settings';
-import { tuner } from '../src/stores/tuner';
+import { listening, resetPlatformCache, tuner } from '../src/stores/tuner';
 
 const SILENT: TunerState = {
   kind: 'silent',
@@ -72,6 +75,8 @@ function press(code: string): void {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  resetPlatformCache();
+  listening.set(false);
   settings.set({ ...DEFAULT_SETTINGS });
   customs.set([]);
   overlay.set(null);
@@ -257,5 +262,94 @@ describe('hotkeys (6.7)', () => {
     );
     expect(get(settings).referenceHz).toBe(before);
     expect(ipc.setReference).not.toHaveBeenCalled();
+  });
+});
+
+describe('settings sheet: input device row (stage 6)', () => {
+  it('input device row is visible on desktop and lists devices with default option', async () => {
+    vi.mocked(ipc.getPlatform).mockResolvedValueOnce('desktop');
+    vi.mocked(ipc.getInputDevices).mockResolvedValueOnce(['Built-in Mic', 'AirPods']);
+    const { container } = render(SettingsSheet);
+    await tick();
+    await tick();
+
+    const select = container.querySelector('.device-select') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    const options = [...select.options];
+    expect(options.length).toBe(3);
+    expect(options[0].value).toBe('');
+    expect(options[0].textContent).toBe('По умолчанию');
+    expect(options[1].value).toBe('Built-in Mic');
+    expect(options[1].textContent).toBe('Built-in Mic');
+    expect(options[2].value).toBe('AirPods');
+    expect(options[2].textContent).toBe('AirPods');
+    expect(select.value).toBe('');
+  });
+
+  it('input device row is hidden on android', async () => {
+    vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
+    const { container } = render(SettingsSheet);
+    await tick();
+    await tick();
+
+    expect(container.querySelector('.device-select')).toBeNull();
+  });
+
+  it('shows missing saved device with not found label', async () => {
+    settings.update((s) => ({ ...s, inputDevice: 'Old USB Mic' }));
+    vi.mocked(ipc.getPlatform).mockResolvedValueOnce('desktop');
+    vi.mocked(ipc.getInputDevices).mockResolvedValueOnce(['Built-in Mic']);
+    const { container } = render(SettingsSheet);
+    await tick();
+    await tick();
+
+    const select = container.querySelector('.device-select') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    const options = [...select.options];
+    expect(options.length).toBe(3);
+    expect(options[2].value).toBe('Old USB Mic');
+    expect(options[2].textContent).toContain('Old USB Mic (не найдено)');
+    expect(select.value).toBe('Old USB Mic');
+  });
+
+  it('changing device writes settings and restarts listening if active', async () => {
+    vi.mocked(ipc.getPlatform).mockResolvedValueOnce('desktop');
+    vi.mocked(ipc.getInputDevices).mockResolvedValueOnce(['Built-in Mic', 'AirPods']);
+    listening.set(true);
+    const { container } = render(SettingsSheet);
+    await tick();
+    await tick();
+
+    const select = container.querySelector('.device-select') as HTMLSelectElement;
+    await fireEvent.change(select, { target: { value: 'AirPods' } });
+    await tick();
+
+    expect(get(settings).inputDevice).toBe('AirPods');
+    expect(ipc.setInputDevice).toHaveBeenCalledWith('AirPods');
+    expect(ipc.saveSettings).toHaveBeenCalled();
+    expect(ipc.stopListening).toHaveBeenCalled();
+    expect(ipc.startListening).toHaveBeenCalled();
+  });
+
+  it('selecting empty value sets inputDevice to null and does not restart if stopped', async () => {
+    settings.update((s) => ({ ...s, inputDevice: 'AirPods' }));
+    vi.mocked(ipc.getPlatform).mockResolvedValueOnce('desktop');
+    vi.mocked(ipc.getInputDevices).mockResolvedValueOnce(['AirPods']);
+    listening.set(false);
+    const { container } = render(SettingsSheet);
+    await tick();
+    await tick();
+
+    const select = container.querySelector('.device-select') as HTMLSelectElement;
+    expect(select.value).toBe('AirPods');
+
+    await fireEvent.change(select, { target: { value: '' } });
+    await tick();
+
+    expect(get(settings).inputDevice).toBeNull();
+    expect(ipc.setInputDevice).toHaveBeenCalledWith(null);
+    expect(ipc.saveSettings).toHaveBeenCalled();
+    expect(ipc.stopListening).not.toHaveBeenCalled();
+    expect(ipc.startListening).not.toHaveBeenCalled();
   });
 });

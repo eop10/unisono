@@ -5,17 +5,52 @@
   import { t } from '../lib/i18n';
   import { instrumentName, tuningName } from '../lib/types';
   import type { Language, Notation, Settings, Theme, Tolerance } from '../lib/types';
-  import { currentInstrument, currentTuning, resetSettings, settings, updateSetting } from '../stores/settings';
+  import {
+    currentInstrument,
+    currentTuning,
+    getPlatform,
+    resetSettings,
+    settings,
+    updateSetting,
+  } from '../stores/settings';
+  import { listening, startListening, stopListening } from '../stores/tuner';
   import { closeOverlay, openOverlay } from '../stores/overlay';
+  import { getInputDevices, saveSettings, setInputDevice } from '../ipc/commands';
+  import { get } from 'svelte/store';
+  import { onMount } from 'svelte';
 
   const s = $derived($settings);
   const lang = $derived(s.language);
   const inst = $derived($currentInstrument);
   const tun = $derived($currentTuning);
 
+  let platform = $state<string>('desktop');
+  let devices = $state<string[]>([]);
+
+  onMount(() => {
+    void getPlatform().then((p) => {
+      platform = p;
+    });
+    void getInputDevices().then((devs) => {
+      devices = devs;
+    });
+  });
+
   function set<K extends keyof typeof s>(key: K, value: (typeof s)[K]) {
     // updateSetting синхронизирует движок там, где настройка влияет на DSP.
     updateSetting(key, value);
+  }
+
+  async function onDeviceChange(e: Event & { currentTarget: HTMLSelectElement }) {
+    const val = e.currentTarget.value;
+    const newDevice = val.trim() === '' ? null : val;
+    set('inputDevice', newDevice);
+    await setInputDevice(newDevice);
+    await saveSettings(get(settings));
+    if (get(listening)) {
+      await stopListening();
+      await startListening();
+    }
   }
 </script>
 
@@ -61,6 +96,25 @@
   </div>
 
   <div class="sheet-section">{t(lang, 'section_precision')}</div>
+  {#if platform !== 'android'}
+    <div class="row">
+      <span class="lbl">{t(lang, 'input_device')}</span>
+      <select
+        class="device-select"
+        aria-label={t(lang, 'input_device')}
+        value={s.inputDevice ?? ''}
+        onchange={onDeviceChange}
+      >
+        <option value="">{t(lang, 'input_default')}</option>
+        {#each devices as dev}
+          <option value={dev}>{dev}</option>
+        {/each}
+        {#if s.inputDevice && !devices.includes(s.inputDevice)}
+          <option value={s.inputDevice}>{s.inputDevice} {t(lang, 'device_not_found')}</option>
+        {/if}
+      </select>
+    </div>
+  {/if}
   <div class="row">
     <span class="lbl">{t(lang, 'tolerance')}</span>
     <span class="seg">
@@ -101,3 +155,15 @@
     <button class="btn danger" onclick={resetSettings}>{t(lang, 'reset')}</button>
   </div>
 </Sheet>
+
+<style>
+  .device-select {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 10px;
+    max-width: 240px;
+    font: 400 13px/1.4 var(--flex);
+    color: inherit;
+  }
+</style>
