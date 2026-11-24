@@ -25,6 +25,25 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("UNISONO_KEYSTORE")
+            val storePassword = System.getenv("UNISONO_STORE_PASSWORD")
+            val keyAlias = System.getenv("UNISONO_KEY_ALIAS")
+            val keyPassword = System.getenv("UNISONO_KEY_PASSWORD")
+
+            if (!keystorePath.isNullOrBlank() &&
+                !storePassword.isNullOrBlank() &&
+                !keyAlias.isNullOrBlank() &&
+                !keyPassword.isNullOrBlank()
+            ) {
+                storeFile = file(keystorePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".debug"
@@ -40,6 +59,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
             optimization {
                enable = true
             }
@@ -82,3 +102,28 @@ dependencies {
 }
 
 apply(from = file("tauri.build.gradle.kts"))
+
+gradle.taskGraph.whenReady {
+    val hasReleaseTask = allTasks.any { task ->
+        task.name.contains("Release", ignoreCase = true)
+    }
+    if (hasReleaseTask) {
+        val keystorePath = System.getenv("UNISONO_KEYSTORE")
+        val storePassword = System.getenv("UNISONO_STORE_PASSWORD")
+        val keyAlias = System.getenv("UNISONO_KEY_ALIAS")
+        val keyPassword = System.getenv("UNISONO_KEY_PASSWORD")
+
+        val missing = mutableListOf<String>()
+        if (keystorePath.isNullOrBlank()) missing.add("UNISONO_KEYSTORE")
+        if (storePassword.isNullOrBlank()) missing.add("UNISONO_STORE_PASSWORD")
+        if (keyAlias.isNullOrBlank()) missing.add("UNISONO_KEY_ALIAS")
+        if (keyPassword.isNullOrBlank()) missing.add("UNISONO_KEY_PASSWORD")
+
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Release signing requires environment variables: ${missing.joinToString(", ")}. " +
+                "Set UNISONO_KEYSTORE, UNISONO_STORE_PASSWORD, UNISONO_KEY_ALIAS, UNISONO_KEY_PASSWORD to build release APK."
+            )
+        }
+    }
+}

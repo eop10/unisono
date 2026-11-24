@@ -102,7 +102,7 @@ jobs:
       - name: Build Android APK
         run: |
           export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-          npm run tauri android build -- --apk --target aarch64 --target armv7
+          npm run tauri android build -- --apk --target aarch64 --target armv7 --debug
       - uses: actions/upload-artifact@v4
         with:
           name: apk
