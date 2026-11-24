@@ -72,11 +72,14 @@ jobs:
           node-version: 22
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: npm ci --prefix ui && npm ci
-      - run: npm run tauri build -- --target universal-apple-darwin
+      - run: npm run tauri build -- --target aarch64-apple-darwin
+      - run: npm run tauri build -- --target x86_64-apple-darwin
       - uses: actions/upload-artifact@v4
         with:
           name: dmg
-          path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          path: |
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
 
   android:
     needs: [detect, rust, ui]
