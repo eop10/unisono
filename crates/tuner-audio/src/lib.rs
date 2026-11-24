@@ -131,9 +131,13 @@ pub use watchdog::{StateSink, SupervisedCapture, WatchdogConfig};
 
 /// Бэкенд по умолчанию для desktop-платформ (7.0); Android — oboe (этап 5, 7.1.2).
 #[cfg(not(target_os = "android"))]
-pub use cpal_source::CpalSource as PlatformSource;
+pub use cpal_source::{list_input_devices, CpalSource, CpalSource as PlatformSource};
 #[cfg(target_os = "android")]
 pub use oboe::OboeSource as PlatformSource;
+#[cfg(target_os = "android")]
+pub fn list_input_devices() -> Vec<String> {
+    Vec::new()
+}
 
 #[cfg(test)]
 mod tests {

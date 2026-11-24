@@ -130,6 +130,20 @@ pub fn delete_preset(id: String, state: State<'_, AppState>) {
     state.delete_preset(&id);
 }
 
+/// Список доступных аудиовходов (desktop-only; на Android — пустой список).
+#[tauri::command]
+pub fn get_input_devices() -> Vec<String> {
+    log::info!("get_input_devices");
+    tuner_audio::list_input_devices()
+}
+
+/// Выбор активного аудиовхода (None — системный по умолчанию).
+#[tauri::command]
+pub fn set_input_device(name: Option<String>, state: State<'_, AppState>) {
+    log::info!("set_input_device: {name:?}");
+    state.set_input_device(name);
+}
+
 /// Платформа: "android" | "desktop" по cfg (этап 5, docs/source/07_platform.md §7.1.3).
 #[tauri::command]
 pub fn platform() -> &'static str {
@@ -228,5 +242,15 @@ mod tests {
         assert_eq!(violin["name"]["BuiltIn"]["ru"], "Стандарт");
         assert_eq!(violin["strings"][0], 55);
         assert_eq!(violin["built_in"], true);
+    }
+
+    #[test]
+    fn get_input_devices_returns_list() {
+        let devs = super::get_input_devices();
+        // На desktop перечисление не паникует; на Android это пустой список
+        #[cfg(target_os = "android")]
+        assert!(devs.is_empty());
+        #[cfg(not(target_os = "android"))]
+        let _ = devs;
     }
 }

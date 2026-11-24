@@ -23,10 +23,28 @@ use super::{AudioError, AudioSource};
 /// Размер буфера устройства (кадры): запрос через `BufferSize::Fixed` (7.2.1).
 const BUFFER_SIZE: u32 = 512;
 
+/// Перечисление всех уникальных входных аудиоустройств CPAL (§7.2, #12).
+pub fn list_input_devices() -> Vec<String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let mut names = Vec::new();
+    if let Ok(devices) = host.input_devices() {
+        for device in devices {
+            if let Ok(name) = device.name() {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    names
+}
+
 /// Команды потоку-владельцу устройства.
 enum Command {
     /// Открыть устройство; ответ — фактическая частота дискретизации.
     Start {
+        input: Option<String>,
         producer: rtrb::Producer<f32>,
         reply: mpsc::Sender<Result<u32, AudioError>>,
     },
@@ -61,9 +79,18 @@ fn owner_loop(
     let mut stream: Option<cpal::Stream> = None;
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            Command::Start { producer, reply } => {
+            Command::Start {
+                input,
+                producer,
+                reply,
+            } => {
                 drop(stream.take()); // повторный start переоткрывает устройство
-                match open_stream(producer, Arc::clone(&overruns), Arc::clone(&stream_failed)) {
+                match open_stream(
+                    input.as_deref(),
+                    producer,
+                    Arc::clone(&overruns),
+                    Arc::clone(&stream_failed),
+                ) {
                     Ok((s, rate)) => {
                         stream = Some(s);
                         let _ = reply.send(Ok(rate));
@@ -87,6 +114,7 @@ fn owner_loop(
 /// потока (`err_cb`) поднимает `failed` — сигнал наблюдателю переоткрыть
 /// устройство (7.2.1).
 pub struct CpalSource {
+    input: Option<String>,
     sample_rate: u32,
     overruns: Arc<AtomicU32>,
     stream_failed: Arc<AtomicBool>,
@@ -95,12 +123,21 @@ pub struct CpalSource {
 
 impl CpalSource {
     pub fn new() -> Self {
+        Self::with_input(None)
+    }
+
+    pub fn with_input(input: Option<String>) -> Self {
         Self {
+            input,
             sample_rate: 0,
             overruns: Arc::new(AtomicU32::new(0)),
             stream_failed: Arc::new(AtomicBool::new(false)),
             owner: None,
         }
+    }
+
+    pub fn input(&self) -> Option<&str> {
+        self.input.as_deref()
     }
 
     /// Переполнения ring buffer с последнего `start` (диагностика пропусков).
@@ -134,6 +171,7 @@ impl AudioSource for CpalSource {
         owner
             .tx
             .send(Command::Start {
+                input: self.input.clone(),
                 producer: sink,
                 reply: tx_reply,
             })
@@ -169,6 +207,7 @@ impl AudioSource for CpalSource {
 /// Сначала — явная проверка TCC (7.2.1): при отказе CoreAudio отдаёт тишину
 /// вместо ошибки, и без проверки UI показывал бы «Слушаю…».
 fn open_stream(
+    target_device: Option<&str>,
     producer: rtrb::Producer<f32>,
     overruns: Arc<AtomicU32>,
     stream_failed: Arc<AtomicBool>,
@@ -179,9 +218,25 @@ fn open_stream(
     stream_failed.store(false, Ordering::Relaxed);
 
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or(AudioError::NoInputDevice)?;
+    let device = if let Some(target_name) = target_device {
+        let found = host.input_devices().ok().and_then(|mut devs| {
+            devs.find(|d| d.name().map(|n| n == target_name).unwrap_or(false))
+        });
+        match found {
+            Some(dev) => dev,
+            None => {
+                tracing::warn!(
+                    target_name,
+                    "указанный аудиовход не найден, откат на вход по умолчанию"
+                );
+                host.default_input_device()
+                    .ok_or(AudioError::NoInputDevice)?
+            }
+        }
+    } else {
+        host.default_input_device()
+            .ok_or(AudioError::NoInputDevice)?
+    };
     let supported = device
         .default_input_config()
         .map_err(|e| config_error(&e.to_string()))?;
@@ -356,6 +411,17 @@ mod tests {
             stream_error("unsupported buffer size"),
             AudioError::Stream(_)
         ));
+    }
+
+    #[test]
+    fn cpal_source_with_input_and_list_devices() {
+        let src = CpalSource::with_input(Some("Nonexistent Mic".into()));
+        assert_eq!(src.input(), Some("Nonexistent Mic"));
+        let default_src = CpalSource::new();
+        assert_eq!(default_src.input(), None);
+
+        // Перечисление устройств не паникует
+        let _ = list_input_devices();
     }
 
     /// Дроп source без stop() тоже останавливает захват: канал владельца

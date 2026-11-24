@@ -36,6 +36,7 @@ pub struct AppState {
     engine: Arc<Mutex<TunerEngine>>,
     capture: Mutex<Option<Arc<SupervisedCapture<PlatformSource>>>>,
     store: Mutex<Option<tuner_storage::Store>>,
+    input_device: Arc<Mutex<Option<String>>>,
 }
 
 /// DTO строя для команды `select_tuning`: UI присылает объект каталога
@@ -84,11 +85,14 @@ impl AppState {
             engine: Arc::new(Mutex::new(engine)),
             capture: Mutex::new(None),
             store: Mutex::new(None),
+            input_device: Arc::new(Mutex::new(None)),
         }
     }
 
     /// Подключает хранилище (вызывается из setup, когда известен каталог).
     pub fn set_store(&self, store: tuner_storage::Store) {
+        let settings = store.load_settings();
+        *self.input_device.lock().expect("input_device") = settings.input_device;
         *self.store.lock().expect("store") = Some(store);
     }
 
@@ -101,11 +105,18 @@ impl AppState {
         if let Some(previous) = slot.take() {
             previous.stop();
         }
+        #[cfg(not(target_os = "android"))]
+        let make_source: tuner_audio::watchdog::SourceFactory<PlatformSource> = {
+            let slot = Arc::clone(&self.input_device);
+            Arc::new(move || PlatformSource::with_input(slot.lock().expect("input_device").clone()))
+        };
+        #[cfg(target_os = "android")]
+        let make_source: tuner_audio::watchdog::SourceFactory<PlatformSource> =
+            Arc::new(PlatformSource::new);
+
         let capture = SupervisedCapture::spawn(
             Arc::clone(&self.engine),
-            // Каждое (пере)открытие — новый источник: поток-владелец
-            // устройства пересоздаётся, устройство освобождается.
-            Arc::new(PlatformSource::new),
+            make_source,
             sink,
             WatchdogConfig::default(),
         )?;
@@ -331,6 +342,7 @@ impl AppState {
 
     /// Сохранение настроек: ошибки логируются, не роняют приложение.
     pub fn save_settings_dto(&self, dto: SettingsDto) {
+        *self.input_device.lock().expect("input_device") = dto.input_device.clone();
         let store = self.store.lock().expect("store");
         let Some(store) = store.as_ref() else {
             log::warn!("хранилище недоступно: настройки не сохранены");
@@ -339,6 +351,16 @@ impl AppState {
         if let Err(e) = store.save_settings(&dto.into()) {
             log::warn!("настройки не сохранены: {e}");
         }
+    }
+
+    /// Слот активного аудиовхода.
+    pub fn set_input_device(&self, name: Option<String>) {
+        *self.input_device.lock().expect("input_device") = name;
+    }
+
+    #[cfg(test)]
+    pub fn input_device(&self) -> Option<String> {
+        self.input_device.lock().expect("input_device").clone()
     }
 
     /// Пользовательские строи для UI; нет хранилища — пусто.
@@ -520,8 +542,13 @@ mod tests {
         dto.low_range = true;
         dto.big_type = true;
         dto.onboarding_done = true;
+        dto.input_device = Some("AirPods".into());
         state.save_settings_dto(dto.clone());
         assert_eq!(state.settings_dto(), dto, "файл переживает запись и чтение");
+        assert_eq!(state.input_device().as_deref(), Some("AirPods"));
+
+        state.set_input_device(None);
+        assert_eq!(state.input_device(), None);
     }
 
     #[test]

@@ -49,6 +49,8 @@ pub fn run() {
             commands::get_presets,
             commands::save_preset,
             commands::delete_preset,
+            commands::get_input_devices,
+            commands::set_input_device,
             commands::platform,
             commands::has_mic_permission,
             commands::request_mic,
