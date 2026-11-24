@@ -209,6 +209,8 @@ pub struct SettingsDto {
     pub low_range: bool,
     pub big_type: bool,
     pub onboarding_done: bool,
+    #[serde(default)]
+    pub input_device: Option<String>,
 }
 
 impl From<tuner_storage::Settings> for SettingsDto {
@@ -241,6 +243,7 @@ impl From<tuner_storage::Settings> for SettingsDto {
             low_range: s.low_range,
             big_type: s.big_type,
             onboarding_done: s.onboarding_done,
+            input_device: s.input_device,
         }
     }
 }
@@ -277,6 +280,7 @@ impl From<SettingsDto> for tuner_storage::Settings {
             low_range: dto.low_range,
             big_type: dto.big_type,
             onboarding_done: dto.onboarding_done,
+            input_device: dto.input_device,
         }
     }
 }

@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tuner_core::music::{InstrumentRegistry, INSTRUMENTS};
 
 /// Текущая версия схемы; пишется в оба файла (§5.3).
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Лимит пользовательских строёв на инструмент (§5.7).
 pub const MAX_PRESETS_PER_INSTRUMENT: usize = 20;
@@ -102,6 +102,7 @@ pub struct Settings {
     pub low_range: bool,
     pub big_type: bool,
     pub onboarding_done: bool,
+    pub input_device: Option<String>,
 }
 
 impl Default for Settings {
@@ -121,6 +122,7 @@ impl Default for Settings {
             low_range: false,
             big_type: false,
             onboarding_done: false,
+            input_device: None,
         }
     }
 }
@@ -177,6 +179,17 @@ impl Settings {
                 }
             }
         }
+
+        // Аудиовход: пустая строка после trim превращается в None.
+        self.input_device = self.input_device.and_then(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
         self
     }
 }
@@ -306,8 +319,9 @@ impl Store {
                     self.settings_read_only.store(false, Ordering::SeqCst);
                     self.newer_schema_found.store(0, Ordering::SeqCst);
                     if version < SCHEMA_VERSION {
-                        // Миграция 1→2: instrument/tuning/language приходят
-                        // дефолтами (`#[serde(default)]`), версия становится 2.
+                        // Миграция 1→2 (инструмент/строй/язык) и 2→3 (аудиовход):
+                        // новые поля приходят дефолтами (`#[serde(default)]`),
+                        // версия становится 3.
                         tracing::info!(
                             path = %path.display(),
                             from = version,
@@ -514,7 +528,7 @@ mod tests {
         let raw = fs::read_to_string(store.settings_path()).unwrap();
         assert!(raw.contains("\"reference_hz\": 442.0"));
         assert!(raw.contains("\"instrument_id\": \"violin\""));
-        assert!(raw.contains("\"schema_version\": 2"));
+        assert!(raw.contains("\"schema_version\": 3"));
     }
 
     #[test]
@@ -599,6 +613,87 @@ mod tests {
         assert_eq!(s.tolerance_cents, 5);
         assert_eq!(s.sensitivity, Sensitivity::High);
         assert!(s.low_range && s.big_type && s.onboarding_done);
+        assert_eq!(s.input_device, None);
+    }
+
+    #[test]
+    fn migration_v2_to_v3() {
+        let (_dir, store) = tmp_store();
+        // Схема 2: с instrument/tuning/language, но без input_device.
+        let v2 = r#"{
+            "schema_version": 2,
+            "reference_hz": 440.0,
+            "instrument_id": "bass",
+            "tuning_id": "bass_std",
+            "notation": "Latin",
+            "theme": "Dark",
+            "language": "En",
+            "haptics": true,
+            "sound": false,
+            "tolerance_cents": 3,
+            "sensitivity": "Normal",
+            "low_range": false,
+            "big_type": false,
+            "onboarding_done": true
+        }"#;
+        fs::write(store.settings_path(), v2).unwrap();
+        let s = store.load_settings();
+        assert_eq!(s.schema_version, 3);
+        assert_eq!(s.instrument_id, "bass");
+        assert_eq!(s.input_device, None);
+    }
+
+    #[test]
+    fn schema_v3_with_input_device_persists() {
+        let (_dir, store) = tmp_store();
+        let v3 = r#"{
+            "schema_version": 3,
+            "reference_hz": 440.0,
+            "instrument_id": "guitar",
+            "tuning_id": "standard_e",
+            "input_device": "AirPods"
+        }"#;
+        fs::write(store.settings_path(), v3).unwrap();
+        let s = store.load_settings();
+        assert_eq!(s.schema_version, 3);
+        assert_eq!(s.input_device.as_deref(), Some("AirPods"));
+
+        // Сохранение перезаписывает файл со схемой 3 и сохраняет input_device
+        store.save_settings(&s).unwrap();
+        let loaded = store.load_settings();
+        assert_eq!(loaded.schema_version, 3);
+        assert_eq!(loaded.input_device.as_deref(), Some("AirPods"));
+    }
+
+    #[test]
+    fn schema_v4_read_only_known_fields() {
+        let (_dir, store) = tmp_store();
+        let v4 = r#"{
+            "schema_version": 4,
+            "reference_hz": 443.0,
+            "instrument_id": "violin",
+            "tuning_id": "violin_std",
+            "input_device": "USB Mic",
+            "some_new_v4_field": 123
+        }"#;
+        fs::write(store.settings_path(), v4).unwrap();
+        let before = fs::read_to_string(store.settings_path()).unwrap();
+        let s = store.load_settings();
+        assert_eq!(s.schema_version, 4);
+        assert_eq!(s.reference_hz, 443.0);
+        assert_eq!(s.instrument_id, "violin");
+        assert_eq!(s.input_device.as_deref(), Some("USB Mic"));
+        assert_eq!(fs::read_to_string(store.settings_path()).unwrap(), before);
+
+        let save_res = store.save_settings(&Settings::default());
+        assert!(matches!(
+            save_res,
+            Err(StoreError::NewerSchema {
+                found: 4,
+                current: SCHEMA_VERSION
+            })
+        ));
+        assert_eq!(fs::read_to_string(store.settings_path()).unwrap(), before);
     }
 
     #[test]
@@ -712,6 +807,21 @@ mod tests {
         assert_eq!(s.theme, Theme::System);
         assert_eq!(s.language, Language::Ru);
         assert_eq!(s.sensitivity, Sensitivity::Normal);
+
+        // Аудиовход: пустая строка (после trim) -> None; пробелы тримятся
+        let s = Settings {
+            input_device: Some("   ".into()),
+            ..Settings::default()
+        }
+        .sanitize();
+        assert_eq!(s.input_device, None);
+
+        let s = Settings {
+            input_device: Some("  USB Mic  ".into()),
+            ..Settings::default()
+        }
+        .sanitize();
+        assert_eq!(s.input_device.as_deref(), Some("USB Mic"));
     }
 
     fn preset(instrument: &str, id: &str) -> PresetRecord {
@@ -746,7 +856,7 @@ mod tests {
 
         // Структура файла §5.6.
         let raw = fs::read_to_string(store.presets_path()).unwrap();
-        assert!(raw.contains("\"schema_version\": 2"));
+        assert!(raw.contains("\"schema_version\": 3"));
         assert!(raw.contains("\"presets\":"));
     }
 
