@@ -40,7 +40,7 @@ Rust-ядро, Tauri-оболочка, Kotlin-шим разрешений и в�
 | 4. macOS | 4 | `cpal`, trait `AudioSource`, окно и меню Tauri, `tuner-storage`, DMG | настройка гитары и скрипки на Mac, DMG запускается, чек-лист п. 10–12, 14 |
 | 5. Android | 5 | NDK, `oboe`, Kotlin-шим (разрешение, вибрация, keep screen on), жизненный цикл | настройка на 2 устройствах, чек-лист п. 1–3c, 8, 9, 15 |
 | 6. Полировка | 2 | доступность, темы, крупный шрифт, микрокопия, ошибки, reduced-motion | чек-лист 8.4 полностью |
-| 7. Выпуск | 2 | Universal DMG, ad-hoc подпись, APK с собственным ключом, GitHub Releases, README «Первый запуск» | критерии 2.6: DMG запускается после «Всё равно открыть», APK ставится sideload |
+| 7. Выпуск | 2 | per-arch DMG (aarch64, x86_64), ad-hoc подпись, APK с собственным ключом, GitHub Releases, README «Первый запуск» | критерии 2.6: DMG запускается после «Всё равно открыть», APK ставится sideload |
 | 8. Айдентика | 1–2 | мастер-иконка, `.icns`, `.ico`, adaptive, шапка README | иконка в Dock, на домашнем экране и в Explorer, 16 px читается |
 | 9. Windows | 2 | WASAPI через `cpal`, WebView2, NSIS, иконка `.ico` | установка на Windows 10/11, микрофон и меню работают |
 | 10. Linux | 3 | ALSA/PipeWire, WebKitGTK, AppImage и `.deb` | запуск на Ubuntu 24.04 и Fedora 40, звук работает |

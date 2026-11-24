@@ -273,20 +273,19 @@ pub fn open(sink: rtrb::Producer<f32>) -> Result<(cpal::Stream, u32), AudioError
 
 ### 7.2.3. Распространение без Apple Developer Program
 
-Основной путь для 1.0: **Universal DMG без нотаризации**, раздача через GitHub Releases.
+Основной путь для 1.0: **per-arch DMG без нотаризации** — `aarch64` (Apple Silicon) и `x86_64` (Intel) отдельными файлами, раздача через GitHub Releases.
 Apple Developer Program нет, поэтому нет Developer ID и notarization; это осознанное решение (D-14).
+
+Единый fat-бандл (fat x86_64+arm64) не используется (rev 4.1, приёмка 4B): macOS не сохраняет разрешение микрофона (TCC) для fat ad-hoc бинарников — системный запрос появляется при каждом запуске. На одинарной архитектуре грант сохраняется (проверено владельцем на macOS 27/arm64; ср. tauri-apps/tauri#8041).
 
 Сборка и ad-hoc подпись:
 
 ```bash
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-npm run tauri build -- --target universal-apple-darwin
-codesign --force --deep --sign - "target/universal-apple-darwin/release/bundle/macos/Unisono.app"
+bash scripts/build-macos.sh   # обе сборки, проверки бандлов, dist/SHA256SUMS
 ```
 
-`codesign -s -` — ad-hoc подпись: она не убирает предупреждение Gatekeeper, но убирает
-«приложение повреждено» и проблемы с переносом. DMG после этого можно собрать
-`hdiutil create` или взять из `bundle/dmg/`, если Tauri его уже создал.
+`codesign -s -` — ad-hoc подпись: её ставит сам Tauri при сборке (ручная подпись не нужна). Она не убирает предупреждение Gatekeeper, но убирает «приложение повреждено» и проблемы с переносом. DMG после этого собирается в `bundle/dmg/`.
 
 Что видит пользователь и что пишем в README:
 

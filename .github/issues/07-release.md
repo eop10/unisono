@@ -5,7 +5,7 @@
 
 ## Задачи
 - [ ] Версия `0.1.0`, `versionCode 1`; тег `v0.1.0`.
-- [ ] macOS: Universal DMG, ad-hoc подпись.
+- [ ] macOS: per-arch DMG (aarch64, x86_64), ad-hoc подпись.
 - [ ] Windows: NSIS-установщик (этап 9).
 - [ ] Linux: AppImage и `.deb` (этап 10).
 - [ ] Android: release APK с собственным keystore.

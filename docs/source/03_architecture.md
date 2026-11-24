@@ -73,7 +73,7 @@ Rust выигрывает по размеру, задержке и контро�
 
 | Платформа | WebView | Захват звука | Упаковка |
 | --- | --- | --- | --- |
-| macOS 12+ | WKWebView | `cpal` → CoreAudio | Universal DMG, ad-hoc подпись |
+| macOS 12+ | WKWebView | `cpal` → CoreAudio | per-arch DMG (aarch64, x86_64), ad-hoc подпись |
 | Windows 10/11 x64 | WebView2 (Chromium) | `cpal` → WASAPI (shared) | NSIS `.exe` / MSI |
 | Linux x86_64 | WebKitGTK 4.1 | `cpal` → ALSA (PipeWire через плагин) | AppImage, `.deb` |
 | Android 8+ | системный Chromium | `oboe` → AAudio/OpenSL ES | APK, свой keystore |

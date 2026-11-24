@@ -70,7 +70,8 @@ opt-level = 3
 | Линт | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Форматирование | `cargo fmt --all` |
 | Бенчмарки DSP | `cargo bench -p tuner-core` |
-| DMG (Universal) | `npm run tauri build -- --target universal-apple-darwin` |
+| DMG (aarch64) | `npm run tauri build -- --target aarch64-apple-darwin` |
+| DMG (x86_64) | `npm run tauri build -- --target x86_64-apple-darwin` |
 | Windows-установщик | `npm run tauri build` на Windows (NSIS) |
 | Linux AppImage / deb | `npm run tauri build` на Linux |
 | Ad-hoc подпись | `codesign --force --deep --sign - Unisono.app` |
@@ -316,7 +317,7 @@ jobs:
 
 Правила:
 
-- CI собирает **неподписанные** артефакты: Universal DMG без notarization и debug APK.
+- CI собирает **неподписанные** артефакты: per-arch DMG (aarch64, x86_64) без notarization и debug APK.
   Release-подпись Android (свой keystore) и ad-hoc подпись macOS выполняются локально
   на релизном шаге — секретов Apple/Google в CI нет.
 - Публикация — GitHub Releases: DMG, APK, SHA-256, раздел «Первый запуск».
@@ -347,10 +348,11 @@ jobs:
 
 1. `version` = `X.Y.Z` в `tauri.conf.json`.
 2. `plutil -p "…/Unisono.app/Contents/Info.plist"` содержит `NSMicrophoneUsageDescription`.
-3. Собран Universal DMG (`--target universal-apple-darwin`), `.app` подписан ad-hoc.
+3. Собраны per-arch DMG (`aarch64` и `x86_64`), `.app` подписан ad-hoc.
 4. Notarization **не выполняется**; `spctl` ожидаемо вернёт `rejected` — это нормально для unsigned.
 5. В README есть блок «Первый запуск» со шагами для macOS 14 и 15+.
-6. Установка с нуля на Apple Silicon и Intel: DMG открывается, приложение запускается после
+6. Установка с нуля на Apple Silicon (`Unisono_*_aarch64.dmg`) и Intel
+   (`Unisono_*_x86_64.dmg`): DMG открывается, приложение запускается после
    «Всё равно открыть», микрофон работает.
 7. DMG + SHA-256 в GitHub Releases; в «О программе» указано `unsigned build`.
 

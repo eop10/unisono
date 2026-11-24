@@ -108,7 +108,7 @@ Web Audio в WebView (не подходит).
 
 **Решение.** Публичный репозиторий на GitHub, релизы через **GitHub Releases**:
 
-- macOS — **Universal DMG** (arm64 + x86_64), `.app` подписан **ad-hoc** (`codesign -s -`),
+- macOS — **per-arch DMG** (`aarch64` и `x86_64`; единый fat-бандл отклонён в rev 4.1 — TCC не сохраняет грант микрофона), `.app` подписан **ad-hoc** (`codesign -s -`),
   без notarization;
 - Android — **APK, подписанный собственным keystore** (self-signed), без Google Play;
 - рядом с файлами — SHA-256; в README — блок «Первый запуск» для macOS 14 и 15+
