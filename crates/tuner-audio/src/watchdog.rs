@@ -375,6 +375,7 @@ mod tests {
                 sensitivity: Sensitivity::Normal,
                 manual_string: None,
                 low_range: false,
+                hold_ms: 1800,
             },
             48_000,
         )))

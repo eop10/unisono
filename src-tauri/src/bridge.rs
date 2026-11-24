@@ -78,6 +78,7 @@ impl AppState {
                 sensitivity: Sensitivity::Normal,
                 manual_string: None,
                 low_range: false,
+                hold_ms: tuner_core::engine::DEFAULT_HOLD_MS,
             },
             48_000,
         );

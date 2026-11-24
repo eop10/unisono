@@ -81,6 +81,9 @@ impl Sensitivity {
     }
 }
 
+/// Длительность удержания последнего показания при затухании струны по умолчанию (мс, #13).
+pub const DEFAULT_HOLD_MS: u32 = 1800;
+
 /// Конфигурация движка. `tuning = None` — хроматический режим (D-6);
 /// `manual_string = Some(i)` — струна, выбранная тапом (ФТ-15).
 #[derive(Clone, Debug)]
@@ -95,6 +98,22 @@ pub struct EngineConfig {
     pub manual_string: Option<usize>,
     /// «Низкий диапазон» (5.3): окно 16384 в хроматическом режиме (4.2.3).
     pub low_range: bool,
+    /// Удержание показания при затухании струны в мс (#13, дефолт 1800).
+    pub hold_ms: u32,
+}
+
+impl Default for EngineConfig {
+    fn default() -> Self {
+        Self {
+            tuning: None,
+            a4: 440.0,
+            tolerance_cents: 3.0,
+            sensitivity: Sensitivity::Normal,
+            manual_string: None,
+            low_range: false,
+            hold_ms: DEFAULT_HOLD_MS,
+        }
+    }
 }
 
 /// Результат сопоставления частоты с целью.
@@ -240,6 +259,7 @@ pub struct TunerEngine {
     /// Сколько мс подряд |cents| ≤ допуска.
     intune_ms: f32,
     last: Option<LastReading>,
+    samples_since_confident: u64,
 }
 
 impl TunerEngine {
@@ -252,6 +272,7 @@ impl TunerEngine {
             matcher: StringMatcher::default(),
             intune_ms: 0.0,
             last: None,
+            samples_since_confident: 0,
         }
     }
 
@@ -273,6 +294,7 @@ impl TunerEngine {
         let manual_changed = self.config.manual_string != config.manual_string;
         let detector_changed = detector_config(&config, self.fs) != *self.detector.config();
         self.config = config;
+        self.samples_since_confident = 0;
         if tuning_changed {
             self.smoother.reset();
             self.matcher.reset();
@@ -293,6 +315,7 @@ impl TunerEngine {
         self.matcher.reset();
         self.intune_ms = 0.0;
         self.last = None;
+        self.samples_since_confident = 0;
     }
 
     /// Обрабатывает кадр длиной ≥ [`Self::window`]; возвращает состояние для UI.
@@ -317,35 +340,70 @@ impl TunerEngine {
         };
 
         match estimate {
-            None | Some(Estimate::Silent) => {
+            None | Some(Estimate::Silent) | Some(Estimate::Uncertain { .. }) => {
                 let _ = self.smoother.push(None, dt_ms);
                 self.intune_ms = 0.0;
-                self.last = None;
-                TunerState {
-                    kind: TunerKind::Silent,
-                    f0: None,
-                    cents: None,
-                    clarity: 0.0,
-                    db,
-                    note_midi: None,
-                    target_hz: None,
-                    string_indices: Vec::new(),
-                }
-            }
-            Some(Estimate::Uncertain { clarity }) => {
-                let _ = self.smoother.push(None, dt_ms);
-                self.intune_ms = 0.0;
-                // Последняя нота приглушена, игла в последней позиции (6.3.4).
-                let last = self.last.as_ref();
-                TunerState {
-                    kind: TunerKind::Uncertain,
-                    f0: last.map(|l| l.f0),
-                    cents: last.map(|l| l.cents),
-                    clarity,
-                    db,
-                    note_midi: last.map(|l| l.note_midi),
-                    target_hz: last.map(|l| l.target_hz),
-                    string_indices: last.map(|l| l.string_indices.clone()).unwrap_or_default(),
+                self.samples_since_confident = self
+                    .samples_since_confident
+                    .saturating_add(raw.len() as u64);
+
+                let max_samples = (u64::from(self.config.hold_ms) * u64::from(fs)) / 1000;
+                let clarity = match estimate {
+                    Some(Estimate::Uncertain { clarity }) => clarity,
+                    _ => 0.0,
+                };
+
+                if let Some(last) = self.last.as_ref() {
+                    if self.samples_since_confident <= max_samples {
+                        // Удержание последнего показания в состоянии Uncertain (приглушено в UI, #13)
+                        TunerState {
+                            kind: TunerKind::Uncertain,
+                            f0: Some(last.f0),
+                            cents: Some(last.cents),
+                            clarity,
+                            db,
+                            note_midi: Some(last.note_midi),
+                            target_hz: Some(last.target_hz),
+                            string_indices: last.string_indices.clone(),
+                        }
+                    } else {
+                        // Окно удержания истекло: тишина и очистка последнего показания
+                        self.last = None;
+                        TunerState {
+                            kind: TunerKind::Silent,
+                            f0: None,
+                            cents: None,
+                            clarity: 0.0,
+                            db,
+                            note_midi: None,
+                            target_hz: None,
+                            string_indices: Vec::new(),
+                        }
+                    }
+                } else if matches!(estimate, Some(Estimate::Uncertain { .. })) {
+                    // Неуверенная оценка без предшествующего показания
+                    TunerState {
+                        kind: TunerKind::Uncertain,
+                        f0: None,
+                        cents: None,
+                        clarity,
+                        db,
+                        note_midi: None,
+                        target_hz: None,
+                        string_indices: Vec::new(),
+                    }
+                } else {
+                    // Тишина без предшествующего показания
+                    TunerState {
+                        kind: TunerKind::Silent,
+                        f0: None,
+                        cents: None,
+                        clarity: 0.0,
+                        db,
+                        note_midi: None,
+                        target_hz: None,
+                        string_indices: Vec::new(),
+                    }
                 }
             }
             Some(Estimate::Pitch { f0, clarity, .. }) => {
@@ -367,7 +425,16 @@ impl TunerEngine {
                 if outcome.foreign {
                     // Ручной режим, чужая нота: пара не подсвечивается (4.7).
                     self.intune_ms = 0.0;
-                    let last = self.last.as_ref();
+                    self.samples_since_confident = self
+                        .samples_since_confident
+                        .saturating_add(raw.len() as u64);
+                    let max_samples = (u64::from(self.config.hold_ms) * u64::from(fs)) / 1000;
+                    let last = if self.samples_since_confident <= max_samples {
+                        self.last.as_ref()
+                    } else {
+                        self.last = None;
+                        None
+                    };
                     return TunerState {
                         kind: TunerKind::Uncertain,
                         f0: last.map(|l| l.f0),
@@ -379,6 +446,8 @@ impl TunerEngine {
                         string_indices: Vec::new(),
                     };
                 }
+
+                self.samples_since_confident = 0;
 
                 // Смена цели (струны/ноты) перезапускает удержание «в строе».
                 let target_changed = self.last.as_ref().is_none_or(|l| {
@@ -449,6 +518,7 @@ mod tests {
             sensitivity: Sensitivity::Normal,
             manual_string: None,
             low_range: false,
+            hold_ms: DEFAULT_HOLD_MS,
         }
     }
 
@@ -544,7 +614,7 @@ mod tests {
     #[test]
     fn silence_is_listening() {
         let mut e = engine(Some(guitar()), 440.0);
-        run_frames(&mut e, note::hz(40, 440.0), 3);
+        // Без предшествующего сигнала — сразу Silent.
         let mut frame = vec![0f32; 4096];
         let st = e.process_frame(&mut frame, FS);
         assert_eq!(st.kind, TunerKind::Silent);
@@ -552,6 +622,61 @@ mod tests {
         assert_eq!(st.cents, None);
         assert_eq!(st.note_midi, None);
         assert_eq!(st.string_indices, Vec::<usize>::new());
+
+        // После ноты — удержание в Uncertain в пределах hold_ms (1800 мс).
+        run_frames(&mut e, note::hz(40, 440.0), 3);
+        let st = e.process_frame(&mut frame, FS);
+        assert_eq!(st.kind, TunerKind::Uncertain);
+        assert_eq!(st.note_midi, Some(40));
+        assert!(st.cents.is_some());
+
+        // По истечении 1800 мс (1800 * 48000 / 1000 = 86400 сэмплов;
+        // 4096 сэмплов на кадр -> 22 кадра) показание сбрасывается в Silent.
+        for _ in 0..25 {
+            e.process_frame(&mut frame, FS);
+        }
+        let st = e.process_frame(&mut frame, FS);
+        assert_eq!(st.kind, TunerKind::Silent);
+        assert_eq!(st.f0, None);
+        assert_eq!(st.cents, None);
+        assert_eq!(st.note_midi, None);
+        assert_eq!(st.string_indices, Vec::<usize>::new());
+    }
+
+    #[test]
+    fn decay_hold_and_immediate_recovery_on_new_signal() {
+        let mut e = engine(Some(guitar()), 440.0);
+        // Звучит E2 (MIDI 40)
+        run_frames(&mut e, note::hz(40, 440.0), 3);
+
+        // Тишина — попадаем в окно удержания
+        let mut silent_frame = vec![0f32; 4096];
+        let st = e.process_frame(&mut silent_frame, FS);
+        assert_eq!(st.kind, TunerKind::Uncertain);
+        assert_eq!(st.note_midi, Some(40));
+
+        // Новый сигнал во время удержания: сразу Tracking без задержки (#13)
+        let st_new = run_frames(&mut e, note::hz(40, 440.0), 1);
+        assert_eq!(st_new.kind, TunerKind::Tracking);
+        assert_eq!(st_new.note_midi, Some(40));
+
+        // Смена ноты на A2 (MIDI 45) устойчиво считывается после заполнения фильтра
+        let st_a2 = run_frames(&mut e, note::hz(45, 440.0), 15);
+        assert_eq!(st_a2.kind, TunerKind::Tracking);
+        assert_eq!(st_a2.note_midi, Some(45));
+    }
+
+    #[test]
+    fn reset_and_config_clears_hold() {
+        let mut e = engine(Some(guitar()), 440.0);
+        run_frames(&mut e, note::hz(40, 440.0), 3);
+
+        // Сброс движка очищает последнее показание и счётчик сэмплов
+        e.reset();
+        let mut silent_frame = vec![0f32; 4096];
+        let st = e.process_frame(&mut silent_frame, FS);
+        assert_eq!(st.kind, TunerKind::Silent);
+        assert_eq!(st.note_midi, None);
     }
 
     #[test]
@@ -685,6 +810,7 @@ mod tests {
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
             low_range: false,
+            hold_ms: DEFAULT_HOLD_MS,
         };
         // A2 точно — выбранная струна.
         let o = matcher.match_f0(note::hz(45, 440.0), &cfg);
@@ -706,6 +832,7 @@ mod tests {
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
             low_range: false,
+            hold_ms: DEFAULT_HOLD_MS,
         };
         let o = matcher.match_f0(note::hz(64, 440.0), &cfg_b);
         assert_eq!(o.string_indices, vec![0, 1]);
@@ -730,6 +857,7 @@ mod tests {
             sensitivity: Sensitivity::Normal,
             manual_string: Some(0), // E2
             low_range: false,
+            hold_ms: DEFAULT_HOLD_MS,
         };
         let mut e = TunerEngine::new(cfg, FS);
         // Сначала точно E2 — tracking на выбранной струне.
