@@ -12,6 +12,8 @@
   import { instrumentName, tuningName } from '../lib/types';
   import { currentInstrument, currentTuning, setReference, settings, showStrings } from '../stores/settings';
   import { listening, manualStrings, selectString, startListening, toggleListening, tuner } from '../stores/tuner';
+  import { getPlatform } from '../stores/settings';
+  import { openAppSettings } from '../ipc/commands';
   import { overlay, openOverlay } from '../stores/overlay';
 
   const s = $derived($settings);
@@ -92,9 +94,15 @@
   onMount(() => window.addEventListener('keydown', onKeyDown));
   onDestroy(() => window.removeEventListener('keydown', onKeyDown));
 
-  /** macOS: системные настройки доступа к микрофону (7.2). */
+  /** Настройки доступа к микрофону: macOS — Privacy_Microphone, Android — экран приложения (7.2). */
   function openMicSettings(): void {
-    void openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+    void getPlatform().then((p) => {
+      if (p === 'android') {
+        void openAppSettings();
+      } else {
+        void openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+      }
+    });
   }
 </script>
 

@@ -111,6 +111,11 @@ export async function requestMic(): Promise<void> {
   await invoke('request_mic');
 }
 
+/** Открыть системные настройки приложения (на Android — экран разрешений). */
+export async function openAppSettings(): Promise<void> {
+  await invoke('open_app_settings');
+}
+
 /** Управление флагом FLAG_KEEP_SCREEN_ON. */
 export async function keepScreenOn(enabled: boolean): Promise<void> {
   await invoke('keep_screen_on', { enabled });

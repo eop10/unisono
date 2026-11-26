@@ -54,6 +54,7 @@ pub fn run() {
             commands::platform,
             commands::has_mic_permission,
             commands::request_mic,
+            commands::open_app_settings,
             commands::keep_screen_on,
             commands::vibrate,
         ])

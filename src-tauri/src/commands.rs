@@ -194,6 +194,24 @@ pub async fn request_mic(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Открыть системные настройки приложения (на Android — экран разрешений приложения).
+#[tauri::command]
+pub fn open_app_settings(app: AppHandle) -> Result<(), String> {
+    log::debug!("open_app_settings");
+    #[cfg(target_os = "android")]
+    {
+        let mic = app.state::<crate::MicHandle>();
+        mic.0
+            .run_mobile_plugin::<()>("openAppSettings", ())
+            .map_err(|e| format!("ошибка открытия настроек: {e}"))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
 /// Флаг FLAG_KEEP_SCREEN_ON (на Android — через Kotlin MicPlugin; на desktop — заглушка).
 #[tauri::command]
 pub fn keep_screen_on(enabled: bool, app: AppHandle) -> Result<(), String> {

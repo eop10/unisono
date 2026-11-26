@@ -15,8 +15,8 @@
   import { overlay, openOverlay } from './stores/overlay';
   import { applySettingsToEngine, loadSettings, settings } from './stores/settings';
   import { loadPresets } from './stores/customs';
-  import { startListening, stopListening } from './stores/tuner';
-  import { onMenuSettings } from './ipc/commands';
+  import { listening, startListening, stopListening, tuner } from './stores/tuner';
+  import { hasMicPermission, onMenuSettings } from './ipc/commands';
 
   const s = $derived($settings);
   const showDemo =
@@ -45,12 +45,25 @@
     mq.addEventListener('change', apply);
 
     // Жизненный цикл (7.1.4): onPause/hidden останавливает звук, onResume возобновляет.
+    // Не перезапускаем в цикле при отказе в микрофоне; при возврате из настроек — только если разрешение уже выдано.
+    let resumeOnVisible = false;
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        void stopListening();
+        resumeOnVisible = get(listening);
+        if (resumeOnVisible) {
+          void stopListening();
+        }
       } else if (document.visibilityState === 'visible') {
-        if (!get(catalogError)) {
+        if (get(catalogError)) return;
+        if (resumeOnVisible) {
+          resumeOnVisible = false;
           void startListening();
+        } else if (get(tuner).kind === 'nopermission') {
+          void hasMicPermission()
+            .then((granted) => {
+              if (granted) void startListening();
+            })
+            .catch(() => {});
         }
       }
     };

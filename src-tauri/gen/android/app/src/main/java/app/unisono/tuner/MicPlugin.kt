@@ -2,10 +2,13 @@ package app.unisono.tuner
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -77,6 +80,17 @@ class MicPlugin(private val activity: Activity) : Plugin(activity) {
                 v.vibrate(20)
             }
         }
+        invoke.resolve()
+    }
+
+    @Command
+    fun openAppSettings(invoke: Invoke) {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", activity.packageName, null)
+        )
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        activity.startActivity(intent)
         invoke.resolve()
     }
 

@@ -37,6 +37,7 @@ export const manualStrings = writable<number[]>([]);
 let prevKind: TunerKind = 'silent';
 let lastVibrateAt = 0;
 let platformCache: Platform | null = null;
+let starting = false;
 
 export async function getPlatform(): Promise<Platform> {
   if (platformCache === null) {
@@ -89,60 +90,66 @@ function refinePermissionError(): void {
 }
 
 export async function startListening(): Promise<void> {
+  if (starting) return;
+  starting = true;
   try {
-    if (platformCache === null) {
-      platformCache = await getPlatform();
-    }
-    if (platformCache === 'android') {
-      await requestMic();
-    }
-  } catch (e) {
-    listening.set(false);
-    const errState = audioErrorState(e);
-    tuner.set(errState);
-    if (errState.kind === 'nopermission') {
-      refinePermissionError();
-    }
-    void keepScreenOn(false);
-    return;
-  }
-
-  const channel = new Channel<TunerState>();
-  prevKind = 'silent';
-  channel.onmessage = (state) => {
-    // Watchdog сдался (7.2.1): захват мёртв — кнопка возвращается в «Слушать».
-    if (state.kind === 'error' || state.kind === 'nopermission') {
+    try {
+      if (platformCache === null) {
+        platformCache = await getPlatform();
+      }
+      if (platformCache === 'android') {
+        await requestMic();
+      }
+    } catch (e) {
       listening.set(false);
+      const errState = audioErrorState(e);
+      tuner.set(errState);
+      if (errState.kind === 'nopermission') {
+        refinePermissionError();
+      }
       void keepScreenOn(false);
-    } else if (state.kind === 'intune' && prevKind !== 'intune') {
-      if (get(settings).haptics) {
-        const now = Date.now();
-        if (now - lastVibrateAt >= 1000) {
-          lastVibrateAt = now;
-          void vibrate();
+      return;
+    }
+
+    const channel = new Channel<TunerState>();
+    prevKind = 'silent';
+    channel.onmessage = (state) => {
+      // Watchdog сдался (7.2.1): захват мёртв — кнопка возвращается в «Слушать».
+      if (state.kind === 'error' || state.kind === 'nopermission') {
+        listening.set(false);
+        void keepScreenOn(false);
+      } else if (state.kind === 'intune' && prevKind !== 'intune') {
+        if (get(settings).haptics) {
+          const now = Date.now();
+          if (now - lastVibrateAt >= 1000) {
+            lastVibrateAt = now;
+            void vibrate();
+          }
         }
       }
+      prevKind = state.kind;
+      tuner.set(state);
+      if (state.kind === 'nopermission') {
+        refinePermissionError();
+      }
+    };
+    // Сразу в «Слушаю…»: после «Повторить» не мигают старые цифры (ревью 4A).
+    tuner.set({ ...SILENT });
+    try {
+      await ipcStart(channel);
+      listening.set(true);
+      void keepScreenOn(true);
+    } catch (e) {
+      listening.set(false);
+      const errState = audioErrorState(e);
+      tuner.set(errState);
+      if (errState.kind === 'nopermission') {
+        refinePermissionError();
+      }
+      void keepScreenOn(false);
     }
-    prevKind = state.kind;
-    tuner.set(state);
-    if (state.kind === 'nopermission') {
-      refinePermissionError();
-    }
-  };
-  // Сразу в «Слушаю…»: после «Повторить» не мигают старые цифры (ревью 4A).
-  tuner.set({ ...SILENT });
-  try {
-    await ipcStart(channel);
-    listening.set(true);
-    void keepScreenOn(true);
-  } catch (e) {
-    listening.set(false);
-    const errState = audioErrorState(e);
-    tuner.set(errState);
-    if (errState.kind === 'nopermission') {
-      refinePermissionError();
-    }
-    void keepScreenOn(false);
+  } finally {
+    starting = false;
   }
 }
 
