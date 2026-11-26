@@ -1,0 +1,18 @@
+name: Feature request / Предложить идею
+description: Предложить новый инструмент, строй или улучшение
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Суть предложения / Summary
+      description: Опишите идею, новый инструмент или строй (с частотами/нотами)
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Зачем это нужно / Context
+    validations:
+      required: false

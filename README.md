@@ -6,11 +6,31 @@
 
 <p align="center">
   Мультиинструментальный тюнер с настраиваемой опорной частотой A4.<br>
-  macOS · Windows · Linux · Android
+  macOS · Android · Windows (скоро) · Linux (скоро)
 </p>
 
-> **Статус:** выпущена версия **`0.1.0`** для **macOS** и **Android** (см. [GitHub Releases](https://github.com/eop10/unisono/releases)).
+<p align="center">
+  <a href="https://github.com/eop10/unisono/releases/tag/v0.1.0"><img src="https://img.shields.io/github/v/release/eop10/unisono?style=flat-square&color=C8A253" alt="Release"></a>
+  <a href="https://github.com/eop10/unisono/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/eop10/unisono/ci.yml?branch=main&style=flat-square" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android-lightgrey?style=flat-square" alt="Platforms">
+</p>
+
+<p align="center">
+  <strong>Русский</strong> · <a href="README.en.md">English</a>
+</p>
+
+> **Статус:** выпущена версия **`0.1.0`** для **macOS** и **Android** (см. [GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.1.0)).
 > Сборки для Windows и Linux отложены до следующего релиза.
+
+## Скачать v0.1.0
+
+| Платформа | Файл | Примечание |
+| --- | --- | --- |
+| macOS (Apple Silicon) | [`Unisono_0.1.0_aarch64.dmg`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_aarch64.dmg) | M1 / M2 / M3 / M4 |
+| macOS (Intel) | [`Unisono_0.1.0_x64.dmg`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_x64.dmg) | x86_64 |
+| Android 8.0+ | [`Unisono_0.1.0_android.apk`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_android.apk) | Universal APK (arm64-v8a / armeabi-v7a) |
+| Контрольные суммы | [`SHA256SUMS.txt`](https://github.com/eop10/unisono/releases/download/v0.1.0/SHA256SUMS.txt) | SHA-256 всех сборок |
 
 ## Что это
 

@@ -1,0 +1,37 @@
+name: Bug report / Сообщить об ошибке
+description: Сообщить о сбое или некорректном поведении Unisono
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Платформа / Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Android
+        - Windows (planned)
+        - Linux (planned)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия / Version
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Что произошло / What happened
+      description: Опишите проблему и шаги воспроизведения
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение / Expected behavior
+    validations:
+      required: false
