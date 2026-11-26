@@ -38,6 +38,38 @@ let prevKind: TunerKind = 'silent';
 let lastVibrateAt = 0;
 let platformCache: Platform | null = null;
 let starting = false;
+let audioCtx: AudioContext | null = null;
+
+/** Мягкий сигнал «в строе» через Web Audio API (без щелчков, офлайн). */
+function playInTuneSound(): void {
+  if (typeof window === 'undefined') return;
+  const Ctor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return;
+  try {
+    if (!audioCtx) {
+      audioCtx = new Ctor();
+    }
+    if (audioCtx.state === 'suspended') {
+      void audioCtx.resume();
+    }
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.18, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.17);
+  } catch {
+    // Web Audio недоступен — тихо игнорируем.
+  }
+}
 
 export async function getPlatform(): Promise<Platform> {
   if (platformCache === null) {
@@ -119,11 +151,15 @@ export async function startListening(): Promise<void> {
         listening.set(false);
         void keepScreenOn(false);
       } else if (state.kind === 'intune' && prevKind !== 'intune') {
-        if (get(settings).haptics) {
-          const now = Date.now();
-          if (now - lastVibrateAt >= 1000) {
-            lastVibrateAt = now;
+        const now = Date.now();
+        if (now - lastVibrateAt >= 1000) {
+          lastVibrateAt = now;
+          const s = get(settings);
+          if (s.haptics) {
             void vibrate();
+          }
+          if (s.sound) {
+            playInTuneSound();
           }
         }
       }

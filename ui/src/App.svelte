@@ -78,6 +78,7 @@
   const theme = $derived(s.theme === 'system' ? (systemLight ? 'light' : 'dark') : s.theme);
   $effect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.bigType = s.bigType ? '1' : '0';
     document.documentElement.lang = s.language;
   });
 </script>

@@ -231,8 +231,44 @@ select {
   color: var(--muted);
   letter-spacing: 0;
 }
-.big-type .note {
-  font-size: 158px;
+.big-type .note,
+:root[data-big-type='1'] .note {
+  font-size: 168px;
+}
+:root[data-big-type='1'] .note.empty {
+  font-size: 68px;
+}
+:root[data-big-type='1'] .oct {
+  font-size: 22px;
+}
+:root[data-big-type='1'] .cents {
+  font-size: 32px;
+}
+:root[data-big-type='1'] .centslbl,
+:root[data-big-type='1'] .freq .unit,
+:root[data-big-type='1'] .freq .target,
+:root[data-big-type='1'] .freq .sep,
+:root[data-big-type='1'] .status,
+:root[data-big-type='1'] .sheet-section {
+  font-size: 13px;
+}
+:root[data-big-type='1'] .freq .val {
+  font-size: 20px;
+}
+:root[data-big-type='1'] .chip,
+:root[data-big-type='1'] .listen {
+  font-size: 15px;
+}
+:root[data-big-type='1'] .str {
+  font-size: 16px;
+  min-width: 44px;
+  height: 40px;
+}
+:root[data-big-type='1'] .row .lbl {
+  font-size: 16px;
+}
+:root[data-big-type='1'] .sheet-title {
+  font-size: 19px;
 }
 .oct {
   position: absolute;

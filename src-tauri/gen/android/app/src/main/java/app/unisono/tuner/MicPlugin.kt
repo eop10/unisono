@@ -6,8 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
@@ -71,13 +73,24 @@ class MicPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun vibrate(invoke: Invoke) {
-        val v = activity.getSystemService(Vibrator::class.java)
-        if (v != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
+        val v = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            activity.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            activity.getSystemService(Vibrator::class.java)
+        }
+        if (v != null && v.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val effect = VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
+                val attrs = VibrationAttributes.Builder()
+                    .setUsage(VibrationAttributes.USAGE_NOTIFICATION)
+                    .build()
+                v.vibrate(effect, attrs)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
             } else {
                 @Suppress("DEPRECATION")
-                v.vibrate(20)
+                v.vibrate(50)
             }
         }
         invoke.resolve()
