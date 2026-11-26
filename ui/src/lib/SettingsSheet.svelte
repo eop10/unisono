@@ -137,10 +137,12 @@
   </div>
 
   <div class="sheet-section">{t(lang, 'section_feedback')}</div>
-  <div class="row">
-    <span class="lbl">{t(lang, 'haptics')}</span>
-    <button class="switch" role="switch" aria-checked={s.haptics} aria-label={t(lang, 'haptics')} onclick={() => set('haptics', !s.haptics)}></button>
-  </div>
+  {#if platform === 'android'}
+    <div class="row">
+      <span class="lbl">{t(lang, 'haptics')}</span>
+      <button class="switch" role="switch" aria-checked={s.haptics} aria-label={t(lang, 'haptics')} onclick={() => set('haptics', !s.haptics)}></button>
+    </div>
+  {/if}
   <div class="row">
     <span class="lbl">{t(lang, 'sound')}</span>
     <button class="switch" role="switch" aria-checked={s.sound} aria-label={t(lang, 'sound')} onclick={() => set('sound', !s.sound)}></button>

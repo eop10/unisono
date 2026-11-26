@@ -31,6 +31,8 @@ const SILENT: TunerState = {
 
 export const tuner = writable<TunerState>({ ...SILENT });
 export const listening = writable(false);
+/** Ручной выбор струны (индексы чипов или пусто = авто); для мгновенной подсветки в тишине. */
+export const manualStrings = writable<number[]>([]);
 
 let prevKind: TunerKind = 'silent';
 let lastVibrateAt = 0;
@@ -166,8 +168,12 @@ export async function toggleListening(): Promise<void> {
 /** Тап по чипу струны: унисон-пара выбирается целиком (ФТ-15), тап по
  * активной струне возвращает автоопределение. Пара живёт в движке. */
 export function selectString(indices: number[], _midi: number): void {
+  const manual = get(manualStrings);
   const current = get(tuner).stringIndices;
-  const active = indices.length > 0 && indices.every((i) => current.includes(i));
+  const active =
+    indices.length > 0 &&
+    (indices.every((i) => manual.includes(i)) || indices.every((i) => current.includes(i)));
+  manualStrings.set(active ? [] : indices);
   void ipcSelectString(active ? null : (indices[0] ?? null));
 }
 

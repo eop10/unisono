@@ -11,7 +11,7 @@
   import { noteLetter, noteOctave } from '../lib/notes';
   import { instrumentName, tuningName } from '../lib/types';
   import { currentInstrument, currentTuning, setReference, settings, showStrings } from '../stores/settings';
-  import { listening, selectString, startListening, toggleListening, tuner } from '../stores/tuner';
+  import { listening, manualStrings, selectString, startListening, toggleListening, tuner } from '../stores/tuner';
   import { overlay, openOverlay } from '../stores/overlay';
 
   const s = $derived($settings);
@@ -166,7 +166,7 @@
     {#if stringsVisible && tun}
       <StringChips
         tuning={tun}
-        active={st.stringIndices}
+        active={st.stringIndices.length > 0 ? st.stringIndices : $manualStrings}
         notation={s.notation}
         {lang}
         onSelect={selectString}

@@ -21,6 +21,7 @@ import {
 import { catalog, tuningsByInstrument, tuningsFor } from './catalog';
 import { customs } from './customs';
 
+import { manualStrings } from './tuner';
 export { getPlatform } from './tuner';
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -112,6 +113,7 @@ export async function applySettingsToEngine(): Promise<void> {
       await ipcSelectTuning(tuning);
     }
   }
+  manualStrings.set([]);
   await Promise.all([
     ipcSetReference(s.referenceHz),
     ipcSetTolerance(s.toleranceCents),
@@ -131,6 +133,7 @@ export function selectInstrument(id: string): void {
       : (list[0]?.id ?? null);
   lastTuning.set(id, tuningId);
   settings.update((s) => ({ ...s, instrumentId: id, tuningId }));
+  manualStrings.set([]);
   scheduleSave();
   // Движок: хроматика убирает строй, иначе — строй целиком (и встроенный,
   // и пользовательский: объект есть в каталоге UI, D-7).
@@ -145,6 +148,7 @@ export function selectInstrument(id: string): void {
 export function selectTuning(instrumentId: string, tuningId: string): void {
   lastTuning.set(instrumentId, tuningId);
   settings.update((s) => ({ ...s, instrumentId, tuningId }));
+  manualStrings.set([]);
   scheduleSave();
   const tuning = tuningsFor(instrumentId).find((t) => t.id === tuningId);
   if (tuning) void ipcSelectTuning(tuning);
@@ -195,6 +199,7 @@ export function resetSettings(): void {
   void ipcSetSensitivity(DEFAULT_SETTINGS.sensitivity);
   void ipcSetLowRange(DEFAULT_SETTINGS.lowRange);
   void ipcSetInputDevice(null);
+  manualStrings.set([]);
   void ipcSelectString(null);
 }
 

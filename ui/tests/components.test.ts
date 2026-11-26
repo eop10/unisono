@@ -388,4 +388,40 @@ describe('settings sheet: input device row (stage 6)', () => {
     expect(ipc.stopListening).not.toHaveBeenCalled();
     expect(ipc.startListening).not.toHaveBeenCalled();
   });
+
+  it('haptics row is hidden on desktop', async () => {
+    vi.mocked(ipc.getPlatform).mockResolvedValueOnce('desktop');
+    const { queryByRole } = render(SettingsSheet);
+    await tick();
+    await tick();
+    expect(queryByRole('switch', { name: /вибрация/i })).toBeNull();
+  });
+
+  it('haptics row is visible on android', async () => {
+    vi.mocked(ipc.getPlatform).mockResolvedValueOnce('android');
+    const { queryByRole } = render(SettingsSheet);
+    await tick();
+    await tick();
+    expect(queryByRole('switch', { name: /вибрация/i })).not.toBeNull();
+  });
+});
+
+describe('manual string highlight in silence', () => {
+  it('highlights manually selected string chip immediately in silence and toggles off on repeat', async () => {
+    const { container } = render(TunerScreen);
+    await tick();
+    const chips = [...container.querySelectorAll<HTMLButtonElement>('.strings .str')];
+    expect(chips.length).toBe(6);
+    expect(chips[0].classList.contains('on')).toBe(false);
+
+    press('Digit1');
+    await tick();
+    expect(chips[0].classList.contains('on')).toBe(true);
+    expect(ipc.selectString).toHaveBeenLastCalledWith(0);
+
+    press('Digit1');
+    await tick();
+    expect(chips[0].classList.contains('on')).toBe(false);
+    expect(ipc.selectString).toHaveBeenLastCalledWith(null);
+  });
 });
