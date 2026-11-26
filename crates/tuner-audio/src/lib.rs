@@ -6,6 +6,7 @@
 //! (docs/source/03_architecture.md, 3.6). Крейт не знает про Tauri и UI:
 //! состояния отдаёт колбэк `TunerState`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -76,6 +77,7 @@ pub fn spawn_analyzer(
     mut consumer: rtrb::Consumer<f32>,
     engine: Arc<Mutex<TunerEngine>>,
     fs: u32,
+    stop: Arc<AtomicBool>,
     mut on_state: impl FnMut(TunerState) + Send + 'static,
 ) -> JoinHandle<()> {
     std::thread::Builder::new()
@@ -91,7 +93,7 @@ pub fn spawn_analyzer(
                     match consumer.pop() {
                         Ok(sample) => buffer.push(sample),
                         Err(_) => {
-                            if consumer.is_abandoned() {
+                            if stop.load(Ordering::Acquire) || consumer.is_abandoned() {
                                 return; // захват остановлен
                             }
                             // Данных пока нет: не жжём CPU.
@@ -195,7 +197,8 @@ mod tests {
     fn analyzer_emits_states_and_exits_on_close() {
         let (mut producer, consumer) = rtrb::RingBuffer::new(4096 + 4 * HOP);
         let (tx, rx) = std::sync::mpsc::channel();
-        let handle = spawn_analyzer(consumer, engine(), 48_000, move |st| {
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = spawn_analyzer(consumer, engine(), 48_000, stop, move |st| {
             let _ = tx.send(st);
         });
 
@@ -229,7 +232,8 @@ mod tests {
             .clone();
         let engine = engine();
         let (tx, rx) = std::sync::mpsc::channel::<TunerState>();
-        let handle = spawn_analyzer(consumer, Arc::clone(&engine), 48_000, move |st| {
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = spawn_analyzer(consumer, Arc::clone(&engine), 48_000, stop, move |st| {
             let _ = tx.send(st);
         });
 
@@ -278,5 +282,14 @@ mod tests {
 
         drop(producer);
         handle.join().expect("анализатор вышел чисто");
+    }
+
+    #[test]
+    fn analyzer_exits_on_stop_token_even_if_producer_alive() {
+        let (_producer, consumer) = rtrb::RingBuffer::new(4096);
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = spawn_analyzer(consumer, engine(), 48_000, Arc::clone(&stop), |_| {});
+        stop.store(true, Ordering::Release);
+        handle.join().expect("анализатор вышел по стоп-токену");
     }
 }

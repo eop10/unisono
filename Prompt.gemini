@@ -1,4 +1,4 @@
-# Задача для Gemini 3.8 Flash в Antigravity: rev 6.3 — Space с фокусом на кнопке и быстрое закрытие
+# Задача для Gemini 3.8 Flash в Antigravity: rev 6.4 — остановка захвата зависает при входе, выбранном по имени
 
 Ты работаешь в существующем репозитории **Unisono** (Rust + Tauri 2 + Svelte 5).
 Открой папку проекта в Antigravity и работай в режиме агента: читай файлы, правь код
@@ -6,50 +6,126 @@
 
 - Репозиторий: https://github.com/eop10/unisono
 - Локальная папка: `/Users/prisaznyj/Documents/Default Project/unisono`
-- Последний запушенный коммит — `2029392`; поверх него локально лежит только этот файл
+- Последний запушенный коммит — `56d7b77`; поверх него локально лежит только этот файл
   (`Prompt.gemini`). История линейная, **не делай reset/rebase/force push**.
-- Это точечная правка по приёмке (**rev 6.3**): два дефекта, найденных владельцем.
+- Точечная правка по приёмке (**rev 6.4**). Только `tuner-audio`; UI/DSP/Android
+  не трогать.
 
 ## 0. Прочитай перед началом
 
-1. `ui/src/lib/TunerScreen.svelte` — `onKeyDown` (ветка `Space`, проверка `BUTTON`).
-2. `ui/src/stores/tuner.ts` — `toggleListening`.
-3. `crates/tuner-audio/src/watchdog.rs` — `SupervisedCapture::stop` и цикл
-   `supervise` (`sleep(tick_ms)`), `WatchdogConfig` (`tick_ms = 500`).
-4. `ui/tests/components.test.ts` — существующие тесты клавиш.
+1. `crates/tuner-audio/src/cpal_source.rs` — `Owner`/`owner_loop`, `CpalSource::stop`,
+   `open_stream` (резолв по имени через `host.input_devices()`), `build_stream`.
+2. `crates/tuner-audio/src/watchdog.rs` — `stop`, `stop_stream`, `start_stream_inner`,
+   `supervise`.
+3. `crates/tuner-audio/src/lib.rs` — `spawn_analyzer` (цикл, `is_abandoned`).
 
-## 1. Контекст: два дефекта приёмки
+## 1. Контекст: остановка виснет навсегда
 
-- **Space не работает, если фокус на кнопке.** Обработчик умышленно пропускает Space
-  при `target.tagName === 'BUTTON'` («Space нажимает её сам»), но после любого клика
-  по чипу/шестерёнке фокус там и остаётся — Space вместо старт/стопа «жмёт кнопку».
-  Для тюнера Space — глобальное действие; делаем его глобальным.
-- **Долгое закрытие приложения.** `stop()` джойнит наблюдатель, который спит
-  `tick_ms` (500 мс); закрытие ждёт конца сна (+ остановка CoreAudio). Нужен быстрый
-  отклик на стоп.
+Симптомы у владельца: кнопка СТОП и Space не работают, переключение «Входа» в настройках
+не перезапускает прослушивание, приложение долго закрывается. Это одно зависание:
+`stop_listening` не возвращается, UI ждёт в `finally`.
 
-## 2. Part 1 — Space глобальный
+Воспроизведено вне Tauri (харнесс ниже): `SupervisedCapture::spawn` с
+`PlatformSource::with_input(None)` — `stop()` за **12 мс**; с
+`with_input(Some("Микрофон MacBook Air"))` — `stop()` виснет навсегда.
+Фолбэк (несуществующее имя → устройство по умолчанию) — снова 12 мс. То есть вис
+привязан ровно к устройству, полученному из `host.input_devices()`.
 
-`ui/src/lib/TunerScreen.svelte`, ветка `e.code === 'Space'`:
-- не пропускать при фокусе на `BUTTON`: делать `e.preventDefault()`
-  (не даём кнопке отработать Space), при необходимости снять фокус с кнопки
-  (`(document.activeElement as HTMLElement | null)?.blur()`), затем `toggleListening()`;
-- сохранить прежние исключения: поля ввода (`INPUT|SELECT|TEXTAREA`), открытый лист
-  (`sheetOpen`), `e.repeat`;
-- комментарий обновить: «Space — глобальный старт/стоп (6.7)».
-- Тест в `ui/tests/components.test.ts`: при фокусе на кнопке нажатие Space
-  вызывает старт/стоп (а не клик кнопки); в поле ввода и при открытом листе — не
-  вызывает; `event.defaultPrevented === true`.
+Стеки зависшего процесса (`sample`):
+- главный поток — в `stop_stream` → `analyzer.join()`;
+- анализатор — живой, цикл pop/sleep, **`is_abandoned()` = false** (producer не дропнут,
+  поток карты продолжает идти, IO-поток CoreAudio жив);
+- потока `unisono-cpal-owner` в списке нет — значит утёк сам `cpal::Stream`
+  (callback с `rtrb::Producer` не освобождён).
 
-## 3. Part 2 — быстрое закрытие
+Дополнительно в `CpalSource::stop` обнаружен латентный дефект порядка: `owner.take()`
+сохраняет `tx` живым в скоупе до конца `if let`, а `thread.join()` вызывается раньше —
+`owner_loop` не выходит из `rx.recv()`, `join` ждёт вечно.
 
-`crates/tuner-audio/src/watchdog.rs`:
-- заменить одиночный `std::thread::sleep(tick_ms)` в `supervise` на сон нарезами
-  (например, по 25–50 мс) с проверкой `listening` после каждого нареза: при `false`
-  выходить сразу. Поведение watchdog по логике не меняется (опрос раз в `tick_ms`),
-  меняется только скорость реакции на стоп (join наблюдателя ≤ ~50 мс).
-- существующие тесты watchdog не ослаблять; тест `stop_is_idempotent_and_restart_works`
-  должен по-прежнему проходить.
+## 2. Part 1 — харнесс для воспроизведения (вне репозитория)
+
+Создай во временной папке мини-проект и прогони до правок (ожидаемо: default — быстро,
+named — вис; убивай `timeout`):
+
+```bash
+mkdir -p /tmp/stophang/src && cd /tmp/stophang
+cat > Cargo.toml <<'EOF'
+[package]
+name = "stophang"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tuner-audio = { path = "/Users/prisaznyj/Documents/Default Project/unisono/crates/tuner-audio" }
+tuner-core = { path = "/Users/prisaznyj/Documents/Default Project/unisono/crates/tuner-core" }
+EOF
+cat > src/main.rs <<'EOF'
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tuner_audio::watchdog::{SourceFactory, SupervisedCapture, WatchdogConfig};
+use tuner_audio::PlatformSource;
+use tuner_core::engine::TunerEngine;
+
+fn run(tag: &str, input: Option<&str>) {
+    let engine = Arc::new(Mutex::new(TunerEngine::new(Default::default(), 48_000)));
+    let sink: Arc<dyn Fn(tuner_core::engine::TunerState) + Send + Sync> = Arc::new(|_s| {});
+    let name = input.map(|s| s.to_string());
+    let make: SourceFactory<PlatformSource> = Arc::new(move || PlatformSource::with_input(name.clone()));
+    let capture = match SupervisedCapture::spawn(Arc::clone(&engine), make, sink, WatchdogConfig::default()) {
+        Ok(c) => c,
+        Err(e) => { println!("{tag}: spawn error {:?}", e); return; }
+    };
+    std::thread::sleep(Duration::from_secs(1));
+    let t = Instant::now();
+    capture.stop();
+    println!("{tag}: stop() took {:?}", t.elapsed());
+}
+
+fn main() {
+    match std::env::args().nth(1).as_deref() {
+        Some("fallback") => run("fallback", Some("Nonexistent Mic")),
+        Some("named") => run("named", Some("Микрофон MacBook Air")),
+        _ => run("default", None),
+    }
+    println!("DONE");
+}
+EOF
+cargo build -q
+timeout 20 ./target/debug/stophang default
+timeout 20 ./target/debug/stophang named
+```
+
+## 3. Part 2 — детерминированная остановка
+
+1. **Токен остановки анализатора.** `spawn_analyzer` получает
+   `stop: Arc<AtomicBool>`; в ветке `Err(_)` после `consumer.pop()` — если
+   `stop.load(Ordering::Acquire)` → `return` (в дополнение к `is_abandoned()`).
+   Токен создаётся в `start_stream_inner` на каждый старт, хранится в `Current`,
+   кладётся в анализатор.
+2. **`stop_stream`:** сначала `stop_token.store(true)`, затем **явный
+   `source.stop()`** (метод трейта `AudioSource`), затем `drop(source)`, затем
+   `analyzer.join()`. Анализатор обязан выйти по токену, даже если producer жив.
+3. **`CpalSource::stop`** — исправить порядок и сделать ограниченным:
+   ```
+   let Owner { tx, thread } = owner;   // destructure
+   let (tx_reply, rx_reply) = mpsc::channel();
+   let _ = tx.send(Command::Stop { reply: tx_reply });
+   let _ = rx_reply.recv_timeout(Duration::from_secs(2));
+   drop(tx);                            // owner_loop увидит закрытие канала
+   let _ = thread.join();
+   ```
+   (`join` теперь завершается, т.к. канал закрыт.)
+4. **Утечка потока при named-устройстве (корень).** После п.1–3 проверить харнессом:
+   если `named` останавливается за < 1.5 с — основной симптом снят, утечку записать
+   в отчёт как upstream-риск cpal (поток карты может оставаться открытым; новый старт
+   с тем же устройством продолжает работать — CoreAudio допускает несколько клиентов).
+   Если `named` всё ещё виснет — снять `sample <pid>` зависшего харнесса, найти, где
+   стоит `unisono-cpal-owner` (или почему его нет), и добавить в `open_stream`
+   обходной путь: если `target_name` совпадает с именем `host.default_input_device()`,
+   использовать `default_input_device()` вместо найденного в перечислении; иначе —
+   как есть. Повторить харнесс, зафиксировать результат в отчёте.
+5. Тесты watchdog (`stop_is_idempotent_and_restart_works` и др.) должны проходить;
+   добавить тест: стоп быстро возвращается с `FakeSource`, и повторный старт работает.
 
 Гейт:
 
@@ -58,12 +134,12 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p tuner-audio
 cargo test --workspace
-npm --prefix ui run check
-npm --prefix ui run test
-npm --prefix ui run build
 ```
 
-Коммит (включая этот файл): `ui,audio: global Space hotkey and fast capture stop (rev 6.3)`
+И харнесс из Part 1: **оба** варианта (`default`, `named`) — `DONE` без виса,
+`stop()` ≤ 1.5 с.
+
+Коммит (включая этот файл): `audio: deterministic capture stop, analyzer stop token (rev 6.4)`
 
 ## 4. Part 3 — пуш, CI, отчёт
 
@@ -72,14 +148,12 @@ git push origin main
 gh run watch "$(gh run list -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
-Отчёт в чат и коротко в #6 (или #13 — куда ближе по смыслу): что изменено, вывод
-гейтов, номер зелёного CI-run. Владельцу: пересобрать
-`npm run tauri build -- --debug --bundles app` и проверить: Space работает после кликов
-по интерфейсу; закрытие быстрое (заметная часть прежней задержки уйдёт только в
-release-сборке — debug всегда медленнее).
+Отчёт в чат и коротко в #12: причина, что исправлено, результаты харнесса (времена
+`default`/`named` до и после), вывод гейтов, номер зелёного CI-run, статус утечки
+(если осталась) и что проверить владельцу вручную: СТОП, Space, смена входа
+(перезапуск прослушивания), быстрое закрытие.
 
 ## 5. Что НЕ делать
 
-- Не трогать DSP, `PitchDetector`, движок, хранилище, устройство ввода,
-  Android-код, `docs/`, `brand/`, `design/`.
-- Не менять логику watchdog (пороги, переоткрытия) — только скорость реакции на стоп.
+- Не трогать DSP, `PitchDetector`, движок, UI, хранилище, Android, `docs/`.
+- Не менять логику watchdog (пороги/переоткрытия) — только гарантированный выход.

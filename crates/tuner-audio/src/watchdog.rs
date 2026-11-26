@@ -80,6 +80,7 @@ pub struct SupervisedCapture<S: AudioSource + 'static> {
 struct Current<S> {
     source: S,
     analyzer: JoinHandle<()>,
+    stop_token: Arc<AtomicBool>,
     /// Обновляется анализатором на каждом кадре.
     last_frame_ms: Arc<AtomicU64>,
 }
@@ -160,26 +161,26 @@ impl<S: AudioSource + 'static> SupervisedCapture<S> {
             sink(state);
         };
         let engine = Arc::clone(&self.engine);
-        let analyzer = spawn_analyzer(consumer, engine, fs, on_state);
+        let stop_token = Arc::new(AtomicBool::new(false));
+        let analyzer = spawn_analyzer(consumer, engine, fs, Arc::clone(&stop_token), on_state);
         *self.current.lock().expect("current") = Some(Current {
             source,
             analyzer,
+            stop_token,
             last_frame_ms,
         });
         Ok(())
     }
 
-    /// Останавливает текущую попытку: дроп источника освобождает producer,
-    /// анализатор видит abandoned и выходит — джойним его.
+    /// Останавливает текущую попытку: токен останавливает анализатор,
+    /// явный вызов source.stop() останавливает источник, дроп источника
+    /// и джойн анализатора (rev 6.4).
     fn stop_stream(&self) {
-        if let Some(current) = self.current.lock().expect("current").take() {
-            let Current {
-                source,
-                analyzer,
-                last_frame_ms: _,
-            } = current;
-            drop(source);
-            let _ = analyzer.join();
+        if let Some(mut current) = self.current.lock().expect("current").take() {
+            current.stop_token.store(true, Ordering::Release);
+            current.source.stop();
+            drop(current.source);
+            let _ = current.analyzer.join();
         }
     }
 
@@ -549,5 +550,43 @@ mod tests {
         .expect("повторный старт");
         assert!(again.is_listening());
         again.stop();
+    }
+
+    /// rev 6.4: стоп быстро возвращается с FakeSource (<= 500 мс), и повторный старт работает.
+    #[test]
+    fn fast_stop_with_fake_source_and_restart() {
+        let started = Arc::new(AtomicU32::new(0));
+        let sink: StateSink = Arc::new(|_| {});
+        let capture = SupervisedCapture::spawn(
+            engine(),
+            FakeSource::factory(Arc::clone(&started), None, 4096),
+            Arc::clone(&sink),
+            WatchdogConfig::default(),
+        )
+        .expect("старт");
+        assert!(capture.is_listening());
+        let t0 = std::time::Instant::now();
+        capture.stop();
+        let elapsed = t0.elapsed();
+        assert!(!capture.is_listening());
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "стоп занял {:?}",
+            elapsed
+        );
+
+        // Повторный старт
+        let again = SupervisedCapture::spawn(
+            engine(),
+            FakeSource::factory(Arc::clone(&started), None, 4096),
+            sink,
+            WatchdogConfig::default(),
+        )
+        .expect("повторный старт");
+        assert!(again.is_listening());
+        let t1 = std::time::Instant::now();
+        again.stop();
+        assert!(!again.is_listening());
+        assert!(t1.elapsed() < Duration::from_millis(500));
     }
 }

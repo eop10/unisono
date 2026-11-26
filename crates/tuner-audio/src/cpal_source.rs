@@ -191,14 +191,20 @@ impl AudioSource for CpalSource {
 
     fn stop(&mut self) {
         if let Some(owner) = self.owner.take() {
+            let Owner { tx, thread } = owner;
             let (tx_reply, rx_reply) = mpsc::channel();
-            if owner.tx.send(Command::Stop { reply: tx_reply }).is_ok() {
-                // Устройство гарантированно освобождено после ответа.
-                let _ = rx_reply.recv_timeout(Duration::from_secs(5));
-            }
-            let _ = owner.thread.join();
+            let _ = tx.send(Command::Stop { reply: tx_reply });
+            let _ = rx_reply.recv_timeout(Duration::from_secs(2));
+            drop(tx); // owner_loop увидит закрытие канала и завершится
+            let _ = thread.join();
         }
         self.sample_rate = 0;
+    }
+}
+
+impl Drop for CpalSource {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
