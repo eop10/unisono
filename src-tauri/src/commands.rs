@@ -87,6 +87,12 @@ pub fn set_tolerance(cents: f32, state: State<'_, AppState>) {
     state.set_tolerance(cents);
 }
 
+/// Порог входного RMS-гейта (-55 / -45 / -35 dBFS).
+#[tauri::command]
+pub fn set_gate_db(db: i8, state: State<'_, AppState>) {
+    state.set_gate_db(db);
+}
+
 /// Чувствительность входного гейта.
 #[tauri::command]
 pub fn set_sensitivity(sensitivity: Sensitivity, state: State<'_, AppState>) {
@@ -266,10 +272,10 @@ pub fn export_presets_file(json: String, app: AppHandle) -> Result<String, Strin
 #[cfg(test)]
 mod tests {
     #[test]
-    fn catalog_has_12_instruments_and_23_tunings() {
+    fn catalog_has_12_instruments_and_26_tunings() {
         let v = super::get_catalog();
         assert_eq!(v["instruments"].as_array().unwrap().len(), 12);
-        assert_eq!(v["tunings"].as_array().unwrap().len(), 23);
+        assert_eq!(v["tunings"].as_array().unwrap().len(), 26);
         let violin = &v["tunings"][13];
         assert_eq!(violin["id"], "violin_std");
         assert_eq!(violin["name"]["BuiltIn"]["ru"], "Стандарт");

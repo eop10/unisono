@@ -46,6 +46,10 @@ export async function setTolerance(cents: number): Promise<void> {
   await invoke('set_tolerance', { cents });
 }
 
+export async function setGateDb(db: number): Promise<void> {
+  await invoke('set_gate_db', { db });
+}
+
 export async function setSensitivity(sensitivity: Sensitivity): Promise<void> {
   await invoke('set_sensitivity', { sensitivity });
 }

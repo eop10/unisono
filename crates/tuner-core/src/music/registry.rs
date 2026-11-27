@@ -120,24 +120,27 @@ mod tests {
         ("viola", "viola_std", &[48, 55, 62, 69]),
         ("cello", "cello_std", &[36, 43, 50, 57]),
         ("contrabass", "contrabass_std", &[28, 33, 38, 43]),
+        ("contrabass", "contrabass_5", &[23, 28, 33, 38, 43]),
         ("balalaika", "balalaika_prima", &[64, 64, 69]),
         ("domra", "domra_3", &[64, 69, 74]),
         ("domra", "domra_4", &[55, 62, 69, 76]),
+        ("domra", "domra_alt", &[52, 57, 62]),
         ("mandolin", "mandolin_std", &[55, 62, 69, 76]),
         ("banjo", "banjo_5", &[50, 55, 59, 62, 67]),
         ("banjo", "banjo_tenor", &[48, 55, 62, 69]),
+        ("banjo", "banjo_tenor_irish", &[43, 50, 57, 64]),
     ];
 
     #[test]
-    fn all_23_tunings_match_spec() {
+    fn all_26_tunings_match_spec() {
         let reg = InstrumentRegistry::new();
-        assert_eq!(EXPECTED.len(), 23);
+        assert_eq!(EXPECTED.len(), 26);
         let total: usize = reg
             .instruments()
             .iter()
             .map(|i| reg.tunings_for(i.id).len())
             .sum();
-        assert_eq!(total, 23);
+        assert_eq!(total, 26);
         for &(instrument, tuning, strings) in EXPECTED {
             let t = reg
                 .tuning(instrument, tuning)
@@ -176,12 +179,12 @@ mod tests {
             .flat_map(|i| reg.tunings_for(i.id))
             .map(|t| t.id.as_str())
             .collect();
-        assert_eq!(ids.len(), 23);
+        assert_eq!(ids.len(), 26);
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(
             ids.len(),
-            23,
+            26,
             "ID встроенных строёв должны быть глобально уникальны"
         );
         assert!(!ids.contains(&"standard"));

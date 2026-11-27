@@ -174,6 +174,13 @@ pub(crate) const TUNING_DEFS: &[TuningDef] = &[
         en: "Standard",
         strings: &[28, 33, 38, 43],
     },
+    TuningDef {
+        id: "contrabass_5",
+        instrument_id: "contrabass",
+        ru: "5-струнный",
+        en: "5-string",
+        strings: &[23, 28, 33, 38, 43],
+    },
     // Балалайка (1) — две струны-унисона E4
     TuningDef {
         id: "balalaika_prima",
@@ -197,6 +204,13 @@ pub(crate) const TUNING_DEFS: &[TuningDef] = &[
         en: "4-string (quintal)",
         strings: &[55, 62, 69, 76],
     },
+    TuningDef {
+        id: "domra_alt",
+        instrument_id: "domra",
+        ru: "Альт (3-струнная)",
+        en: "Alto (3-string)",
+        strings: &[52, 57, 62],
+    },
     // Мандолина (1) — 4 курса, пара настраивается как одна струна
     TuningDef {
         id: "mandolin_std",
@@ -219,6 +233,13 @@ pub(crate) const TUNING_DEFS: &[TuningDef] = &[
         ru: "Тенор C-G-D-A",
         en: "Tenor C-G-D-A",
         strings: &[48, 55, 62, 69],
+    },
+    TuningDef {
+        id: "banjo_tenor_irish",
+        instrument_id: "banjo",
+        ru: "Тенор Irish G-D-A-E",
+        en: "Tenor Irish G-D-A-E",
+        strings: &[43, 50, 57, 64],
     },
 ];
 
@@ -248,8 +269,8 @@ mod tests {
     }
 
     #[test]
-    fn defs_count_is_23() {
-        assert_eq!(TUNING_DEFS.len(), 23);
+    fn defs_count_is_26() {
+        assert_eq!(TUNING_DEFS.len(), 26);
     }
 
     #[test]

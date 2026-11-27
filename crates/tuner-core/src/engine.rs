@@ -93,6 +93,8 @@ pub struct EngineConfig {
     pub a4: f64,
     /// Допуск «в строе» в центах (2/3/5).
     pub tolerance_cents: f32,
+    /// Порог входного RMS-гейта, dBFS (−55 / −45 / −35; дефолт −45).
+    pub gate_db: f32,
     pub sensitivity: Sensitivity,
     /// Индекс выбранной струны; `None` — автоопределение.
     pub manual_string: Option<usize>,
@@ -108,6 +110,7 @@ impl Default for EngineConfig {
             tuning: None,
             a4: 440.0,
             tolerance_cents: 3.0,
+            gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: None,
             low_range: false,
@@ -496,7 +499,7 @@ fn detector_config(config: &EngineConfig, fs: u32) -> DetectorConfig {
         // Хроматика: 4096, с «Низким диапазоном» — 16384 (4.2.3, D-3).
         None => DetectorConfig::for_chromatic(config.low_range, fs),
     };
-    cfg.gate_db = GATE_DB;
+    cfg.gate_db = config.gate_db.clamp(-65.0, -25.0);
     cfg.clarity_min = config.sensitivity.clarity_min();
     cfg
 }
@@ -514,6 +517,7 @@ mod tests {
             tuning,
             a4,
             tolerance_cents: 3.0,
+            gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: None,
             low_range: false,
@@ -813,6 +817,7 @@ mod tests {
             tuning: Some(guitar()),
             a4: 440.0,
             tolerance_cents: 3.0,
+            gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
             low_range: false,
@@ -835,6 +840,7 @@ mod tests {
             tuning: Some(balalaika()),
             a4: 440.0,
             tolerance_cents: 3.0,
+            gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
             low_range: false,
@@ -860,6 +866,7 @@ mod tests {
             tuning: Some(guitar()),
             a4: 440.0,
             tolerance_cents: 3.0,
+            gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(0), // E2
             low_range: false,

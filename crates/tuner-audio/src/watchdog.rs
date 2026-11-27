@@ -381,6 +381,7 @@ mod tests {
                 tuning: None,
                 a4: 440.0,
                 tolerance_cents: 3.0,
+                gate_db: -45.0,
                 sensitivity: Sensitivity::Normal,
                 manual_string: None,
                 low_range: false,

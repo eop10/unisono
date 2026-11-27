@@ -16,6 +16,7 @@ vi.mock('../src/ipc/commands', () => ({
   selectTuning: vi.fn(async () => {}),
   selectString: vi.fn(async () => {}),
   setTolerance: vi.fn(async () => {}),
+  setGateDb: vi.fn(async () => {}),
   setSensitivity: vi.fn(async () => {}),
   setLowRange: vi.fn(async () => {}),
   getSettings: vi.fn(async () => null),

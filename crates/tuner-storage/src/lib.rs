@@ -97,6 +97,8 @@ pub struct Settings {
     pub sound: bool,
     /// Допуск «в строе»: 2, 3 или 5.
     pub tolerance_cents: u8,
+    /// Порог входного RMS-гейта, dBFS: -55, -45 или -35.
+    pub gate_db: i8,
     pub sensitivity: Sensitivity,
     /// Разрешает окно 16384 в хроматическом режиме.
     pub low_range: bool,
@@ -119,6 +121,7 @@ impl Default for Settings {
             haptics: true,
             sound: false,
             tolerance_cents: 3,
+            gate_db: -45,
             sensitivity: Sensitivity::Normal,
             low_range: false,
             big_type: false,
@@ -140,6 +143,9 @@ impl Settings {
         // Допуск: только 2 / 3 / 5.
         if !matches!(self.tolerance_cents, 2 | 3 | 5) {
             self.tolerance_cents = 3;
+        }
+        if !matches!(self.gate_db, -55 | -45 | -35) {
+            self.gate_db = -45;
         }
 
         // Enum-значения из файла, которые мы не знаем.

@@ -4,7 +4,7 @@
   import { fmtHz } from '../lib/format';
   import { t } from '../lib/i18n';
   import { instrumentName, tuningName } from '../lib/types';
-  import type { Language, Notation, Settings, Theme, Tolerance } from '../lib/types';
+  import type { GateDb, Language, Notation, Settings, Theme, Tolerance } from '../lib/types';
   import {
     currentInstrument,
     currentTuning,
@@ -132,6 +132,14 @@
     <span class="seg">
       {#each ['low', 'normal', 'high'] as se}
         <button class:on={s.sensitivity === se} aria-pressed={s.sensitivity === se} onclick={() => set('sensitivity', se as Settings['sensitivity'])}>{t(lang, `sens_${se}` as 'sens_low')}</button>
+      {/each}
+    </span>
+  </div>
+  <div class="row">
+    <span class="lbl">{t(lang, 'gate_db')}</span>
+    <span class="seg">
+      {#each [[-55, 'gate_quiet'], [-45, 'gate_std'], [-35, 'gate_loud']] as [db, key]}
+        <button class:on={s.gateDb === db} aria-pressed={s.gateDb === db} onclick={() => set('gateDb', db as GateDb)}>{t(lang, key as 'gate_quiet')}</button>
       {/each}
     </span>
   </div>

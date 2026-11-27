@@ -75,6 +75,7 @@ impl AppState {
                 tuning: Some(guitar),
                 a4: 440.0,
                 tolerance_cents: 3.0,
+                gate_db: -45.0,
                 sensitivity: Sensitivity::Normal,
                 manual_string: None,
                 low_range: false,
@@ -185,6 +186,15 @@ impl AppState {
         self.with_config(|c| c.tolerance_cents = cents);
     }
 
+    /// Порог входного RMS-гейта (-55 / -45 / -35 dBFS).
+    pub fn set_gate_db(&self, db: i8) {
+        let db = match db {
+            -55 | -45 | -35 => db,
+            _ => -45,
+        };
+        self.with_config(|c| c.gate_db = f32::from(db));
+    }
+
     /// Чувствительность входного гейта.
     pub fn set_sensitivity(&self, sensitivity: Sensitivity) {
         self.with_config(|c| c.sensitivity = sensitivity);
@@ -202,6 +212,10 @@ impl Default for AppState {
     }
 }
 
+fn default_gate_db() -> i8 {
+    -45
+}
+
 /// Настройки для UI (camelCase-поля, lowercase-значения — так устроен
 /// `ui/src/lib/types.ts`): зеркало `tuner_storage::Settings` (§5.3).
 /// `schema_version` живёт только в файле, через UI не ходит.
@@ -217,6 +231,8 @@ pub struct SettingsDto {
     pub haptics: bool,
     pub sound: bool,
     pub tolerance_cents: u8,
+    #[serde(default = "default_gate_db")]
+    pub gate_db: i8,
     pub sensitivity: String,
     pub low_range: bool,
     pub big_type: bool,
@@ -249,6 +265,7 @@ impl From<tuner_storage::Settings> for SettingsDto {
             haptics: s.haptics,
             sound: s.sound,
             tolerance_cents: s.tolerance_cents,
+            gate_db: s.gate_db,
             sensitivity: match s.sensitivity {
                 tuner_storage::Sensitivity::Low => "low".into(),
                 tuner_storage::Sensitivity::High => "high".into(),
@@ -287,6 +304,7 @@ impl From<SettingsDto> for tuner_storage::Settings {
             haptics: dto.haptics,
             sound: dto.sound,
             tolerance_cents: dto.tolerance_cents,
+            gate_db: dto.gate_db,
             sensitivity: match dto.sensitivity.as_str() {
                 "low" => tuner_storage::Sensitivity::Low,
                 "high" => tuner_storage::Sensitivity::High,

@@ -54,6 +54,7 @@ export type Theme = 'system' | 'light' | 'dark';
 export type Language = 'ru' | 'en';
 export type Sensitivity = 'low' | 'normal' | 'high';
 export type Tolerance = 2 | 3 | 5;
+export type GateDb = -55 | -45 | -35;
 
 export interface Settings {
   referenceHz: number;
@@ -65,6 +66,7 @@ export interface Settings {
   bigType: boolean;
   strobe: boolean;
   toleranceCents: Tolerance;
+  gateDb: GateDb;
   sensitivity: Sensitivity;
   lowRange: boolean;
   haptics: boolean;

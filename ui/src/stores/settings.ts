@@ -15,6 +15,7 @@ import {
   setReference as ipcSetReference,
   setSensitivity as ipcSetSensitivity,
   setTolerance as ipcSetTolerance,
+  setGateDb as ipcSetGateDb,
   getSettings as ipcGetSettings,
   saveSettings as ipcSaveSettings,
 } from '../ipc/commands';
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bigType: false,
   strobe: false,
   toleranceCents: 3,
+  gateDb: -45,
   sensitivity: 'normal',
   lowRange: false,
   haptics: true,
@@ -118,6 +120,7 @@ export async function applySettingsToEngine(): Promise<void> {
   await Promise.all([
     ipcSetReference(s.referenceHz),
     ipcSetTolerance(s.toleranceCents),
+    ipcSetGateDb(s.gateDb),
     ipcSetSensitivity(s.sensitivity),
     ipcSetLowRange(s.lowRange),
     ipcSetInputDevice(s.inputDevice),
@@ -174,6 +177,9 @@ export function updateSetting<K extends keyof Settings>(key: K, value: Settings[
     case 'toleranceCents':
       void ipcSetTolerance(value as number);
       break;
+    case 'gateDb':
+      void ipcSetGateDb(value as number);
+      break;
     case 'sensitivity':
       void ipcSetSensitivity(value as Sensitivity);
       break;
@@ -197,6 +203,7 @@ export function resetSettings(): void {
   if (std) void ipcSelectTuning(std);
   void ipcSetReference(DEFAULT_SETTINGS.referenceHz);
   void ipcSetTolerance(DEFAULT_SETTINGS.toleranceCents);
+  void ipcSetGateDb(DEFAULT_SETTINGS.gateDb);
   void ipcSetSensitivity(DEFAULT_SETTINGS.sensitivity);
   void ipcSetLowRange(DEFAULT_SETTINGS.lowRange);
   void ipcSetInputDevice(null);
