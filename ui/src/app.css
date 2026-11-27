@@ -556,6 +556,7 @@ select {
 }
 .seg {
   display: inline-flex;
+  align-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
@@ -565,6 +566,16 @@ select {
   min-height: 36px;
   font: 500 12px/1 var(--mono);
   color: var(--muted);
+}
+.seg .capo-val {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  min-height: 36px;
+  min-width: 72px;
+  font: 500 12px/1 var(--mono);
+  color: var(--text);
 }
 .seg button.on {
   background: var(--brass);

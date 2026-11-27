@@ -265,7 +265,7 @@
         <span class="intonation-hint">{intonationHint}</span>
         {#if openCents === null && (st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null && st.noteMidi !== null}
           <button
-            class="btn ghost"
+            class="listen"
             onclick={() => {
               openCents = st.cents;
               openMidi = st.noteMidi;
@@ -273,41 +273,43 @@
           >{t(lang, 'save')}</button>
         {:else if openCents !== null && fret12Cents === null && (st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null}
           <button
-            class="btn ghost"
+            class="listen"
             onclick={() => {
               fret12Cents = st.cents;
             }}
           >12</button>
         {/if}
-        <button class="btn ghost" onclick={resetIntonation}>{t(lang, 'intonation_reset')}</button>
+        <button class="listen" onclick={resetIntonation}>{t(lang, 'intonation_reset')}</button>
       </div>
     {/if}
 
     <div class="bottom">
-      <button
-        class="listen"
-        class:on={$listening}
-        aria-pressed={$listening}
-        aria-label={t(lang, 'aria_listen')}
-        onclick={() => void toggleListening()}
-      >{$listening ? t(lang, 'stop') : t(lang, 'listen')}</button>
-      <button
-        class="btn ghost"
-        class:on={isTonePlaying}
-        aria-pressed={isTonePlaying}
-        onclick={() => void playTone(toneHz)}
-      >{isTonePlaying ? t(lang, 'tone_stop') : t(lang, 'tone_play')}</button>
-      {#if stringsVisible}
+      <div class="bottom-left">
         <button
-          class="btn ghost"
-          class:on={intonationOpen}
-          aria-pressed={intonationOpen}
-          onclick={() => {
-            intonationOpen = !intonationOpen;
-            if (!intonationOpen) resetIntonation();
-          }}
-        >{t(lang, 'intonation')}</button>
-      {/if}
+          class="listen"
+          class:on={$listening}
+          aria-pressed={$listening}
+          aria-label={t(lang, 'aria_listen')}
+          onclick={() => void toggleListening()}
+        >{$listening ? t(lang, 'stop') : t(lang, 'listen')}</button>
+        <button
+          class="listen"
+          class:on={isTonePlaying}
+          aria-pressed={isTonePlaying}
+          onclick={() => void playTone(toneHz)}
+        >{isTonePlaying ? t(lang, 'tone_stop') : t(lang, 'tone_play')}</button>
+        {#if stringsVisible}
+          <button
+            class="listen"
+            class:on={intonationOpen}
+            aria-pressed={intonationOpen}
+            onclick={() => {
+              intonationOpen = !intonationOpen;
+              if (!intonationOpen) resetIntonation();
+            }}
+          >{t(lang, 'intonation')}</button>
+        {/if}
+      </div>
       <!-- Движок шлёт уровень даже в «Слушаю…» — индикатор живой (ФТ-16). -->
       <LevelMeter db={st.db} {lang} />
       <div class="status" class:idle={st.kind === 'silent' || st.kind === 'uncertain'} class:tune={inTune}>
@@ -318,6 +320,11 @@
 </div>
 
 <style>
+  .bottom-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
   .intonation-bar {
     display: flex;
     align-items: center;
