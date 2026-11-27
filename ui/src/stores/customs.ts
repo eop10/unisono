@@ -1,8 +1,9 @@
 //! Пользовательские строи (5.6): источник — tuner-storage через IPC,
 //! стор — единственное представление для каталога UI (name → `Custom`).
 
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { Tuning } from '../lib/types';
+import { NAME_MAX, validateTuning } from '../lib/validate';
 import {
   deletePreset as ipcDelete,
   getPresets as ipcGetPresets,
@@ -65,4 +66,77 @@ export function savePreset(tuning: Tuning): void {
 export function deletePreset(id: string): void {
   customs.update((list) => list.filter((t) => t.id !== id));
   void ipcDelete(id).catch(() => {});
+}
+
+export interface ExportedPreset {
+  instrumentId: string;
+  name: string;
+  strings: number[];
+}
+
+export interface ExportedPresetsBundle {
+  format: 'unisono-presets';
+  version: 1;
+  presets: ExportedPreset[];
+}
+
+/** Сериализация пользовательских строёв в переносимый JSON (1.1). */
+export function exportPresetsJson(): { json: string; count: number } {
+  const list = get(customs);
+  const bundle: ExportedPresetsBundle = {
+    format: 'unisono-presets',
+    version: 1,
+    presets: list.map((t) => ({
+      instrumentId: t.instrument_id,
+      name: 'Custom' in t.name ? t.name.Custom : '',
+      strings: [...t.strings],
+    })),
+  };
+  return { json: JSON.stringify(bundle, null, 2), count: list.length };
+}
+
+/** Импорт пользовательских строёв из JSON: валидирует, пропускает дубли и лимит. */
+export function importPresetsJson(raw: string, knownInstrumentIds: Set<string>): number | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const items = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === 'object' &&
+        parsed !== null &&
+        Array.isArray((parsed as { presets?: unknown }).presets)
+      ? (parsed as { presets: unknown[] }).presets
+      : null;
+  if (!items) return null;
+
+  let added = 0;
+  for (const item of items) {
+    if (typeof item !== 'object' || item === null) continue;
+    const obj = item as { instrumentId?: unknown; name?: unknown; strings?: unknown };
+    if (typeof obj.instrumentId !== 'string' || !knownInstrumentIds.has(obj.instrumentId)) continue;
+    if (typeof obj.name !== 'string' || !Array.isArray(obj.strings)) continue;
+    const strings = obj.strings.filter(
+      (n): n is number => typeof n === 'number' && Number.isInteger(n),
+    );
+    if (strings.length !== obj.strings.length) continue;
+
+    const trimmedName = obj.name.trim().slice(0, NAME_MAX);
+    const existingForInst = get(customs)
+      .filter((t) => t.instrument_id === obj.instrumentId)
+      .map((t) => ({ id: t.id, name: 'Custom' in t.name ? t.name.Custom : '' }));
+    if (validateTuning(trimmedName, strings, existingForInst, null) !== null) continue;
+
+    savePreset({
+      id: newPresetId(),
+      instrument_id: obj.instrumentId,
+      name: { Custom: trimmedName },
+      strings,
+      built_in: false,
+    });
+    added += 1;
+  }
+  return added;
 }

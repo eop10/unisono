@@ -94,6 +94,10 @@
     <span class="lbl">{t(lang, 'big_type')}</span>
     <button class="switch" role="switch" aria-checked={s.bigType} aria-label={t(lang, 'big_type')} onclick={() => set('bigType', !s.bigType)}></button>
   </div>
+  <div class="row">
+    <span class="lbl">{t(lang, 'strobe')}</span>
+    <button class="switch" role="switch" aria-checked={s.strobe} aria-label={t(lang, 'strobe')} onclick={() => set('strobe', !s.strobe)}></button>
+  </div>
 
   <div class="sheet-section">{t(lang, 'section_precision')}</div>
   {#if platform !== 'android'}

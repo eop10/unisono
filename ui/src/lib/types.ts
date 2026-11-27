@@ -63,6 +63,7 @@ export interface Settings {
   theme: Theme;
   language: Language;
   bigType: boolean;
+  strobe: boolean;
   toleranceCents: Tolerance;
   sensitivity: Sensitivity;
   lowRange: boolean;

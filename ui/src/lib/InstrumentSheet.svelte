@@ -6,6 +6,7 @@
   import { noteLetter } from '../lib/notes';
   import { instrumentName, tuningName } from '../lib/types';
   import { instruments, tuningsByInstrument } from '../stores/catalog';
+  import { customs, exportPresetsJson, importPresetsJson } from '../stores/customs';
   import { closeOverlay, openEditor } from '../stores/overlay';
   import { selectInstrument, selectTuning, settings } from '../stores/settings';
 
@@ -15,10 +16,43 @@
   const isChromatic = $derived(
     $instruments.find((i) => i.id === s.instrumentId)?.kind === 'Chromatic',
   );
+  const hasCustoms = $derived($customs.length > 0);
+  let transferMsg = $state<string | null>(null);
+  let fileInput = $state<HTMLInputElement | undefined>();
 
   function pickInstrument(id: string) {
     selectInstrument(id);
     if ($instruments.find((i) => i.id === id)?.kind === 'Chromatic') closeOverlay();
+  }
+
+  function onExport() {
+    const { json, count } = exportPresetsJson();
+    try {
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'unisono-presets.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Игнорируем ограничения скачивания, дублируем в буфер обмена.
+    }
+    void navigator.clipboard?.writeText(json).catch(() => {});
+    transferMsg = `${t(lang, 'exported_count')} ${count}`;
+  }
+
+  async function onImportFile(e: Event & { currentTarget: HTMLInputElement }) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    const raw = await file.text();
+    const knownIds = new Set(
+      $instruments.filter((i) => i.kind !== 'Chromatic').map((i) => i.id),
+    );
+    const added = importPresetsJson(raw, knownIds);
+    transferMsg =
+      added === null ? t(lang, 'import_invalid') : `${t(lang, 'imported_count')} ${added}`;
   }
 </script>
 
@@ -62,8 +96,20 @@
         {/if}
       </div>
     {/each}
-    <div class="actions" style="justify-content:flex-start">
+    <div class="actions" style="justify-content:flex-start;flex-wrap:wrap">
       <button class="btn" onclick={() => openEditor(s.instrumentId, null)}>{t(lang, 'new_tuning')}</button>
+      <button class="btn ghost" disabled={!hasCustoms} onclick={onExport}>{t(lang, 'export_presets')}</button>
+      <button class="btn ghost" onclick={() => fileInput?.click()}>{t(lang, 'import_presets')}</button>
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept=".json,application/json"
+        style="display:none"
+        onchange={onImportFile}
+      />
     </div>
+    {#if transferMsg}
+      <p class="notes" style="margin-top:8px">{transferMsg}</p>
+    {/if}
   {/if}
 </Sheet>

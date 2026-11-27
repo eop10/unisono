@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   language: 'ru',
   bigType: false,
+  strobe: false,
   toleranceCents: 3,
   sensitivity: 'normal',
   lowRange: false,

@@ -425,3 +425,21 @@ describe('manual string highlight in silence', () => {
     expect(ipc.selectString).toHaveBeenLastCalledWith(null);
   });
 });
+
+describe('strobe mode (1.1)', () => {
+  it('renders StrobeGauge when settings.strobe is true and toggles via SettingsSheet', async () => {
+    settings.update((s) => ({ ...s, strobe: true }));
+    const screen = render(TunerScreen);
+    await tick();
+    expect(screen.container.querySelector('svg.gauge.strobe')).not.toBeNull();
+    screen.unmount();
+
+    const sheet = render(SettingsSheet);
+    await tick();
+    await tick();
+    const sw = sheet.getByRole('switch', { name: /стробоскоп/i });
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(sw);
+    expect(get(settings).strobe).toBe(false);
+  });
+});

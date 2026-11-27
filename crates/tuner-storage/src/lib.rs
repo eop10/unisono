@@ -101,6 +101,7 @@ pub struct Settings {
     /// Разрешает окно 16384 в хроматическом режиме.
     pub low_range: bool,
     pub big_type: bool,
+    pub strobe: bool,
     pub onboarding_done: bool,
     pub input_device: Option<String>,
 }
@@ -121,6 +122,7 @@ impl Default for Settings {
             sensitivity: Sensitivity::Normal,
             low_range: false,
             big_type: false,
+            strobe: false,
             onboarding_done: false,
             input_device: None,
         }

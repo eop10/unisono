@@ -4,6 +4,7 @@
   import { get } from 'svelte/store';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import CentsGauge from './CentsGauge.svelte';
+  import StrobeGauge from './StrobeGauge.svelte';
   import LevelMeter from './LevelMeter.svelte';
   import StringChips from './StringChips.svelte';
   import { fmtCents, fmtHz } from '../lib/format';
@@ -153,13 +154,23 @@
         <span class="sep">/</span>
         <span class="target">{st.targetHz === null ? '—' : fmtHz(st.targetHz, lang)}</span>
       </div>
-      <CentsGauge
-        cents={st.cents}
-        dim={st.kind === 'uncertain'}
-        {inTune}
-        showNeedle={st.kind !== 'silent'}
-        {lang}
-      />
+      {#if s.strobe}
+        <StrobeGauge
+          cents={st.cents}
+          dim={st.kind === 'uncertain'}
+          {inTune}
+          showNeedle={st.kind !== 'silent'}
+          {lang}
+        />
+      {:else}
+        <CentsGauge
+          cents={st.cents}
+          dim={st.kind === 'uncertain'}
+          {inTune}
+          showNeedle={st.kind !== 'silent'}
+          {lang}
+        />
+      {/if}
       <div class="centsrow">
         <!-- 6.3.2: в Uncertain цифры скрыты — «—», подпись «центов» не показывается. -->
         <span class="cents" class:empty={idle || st.kind === 'uncertain'}>

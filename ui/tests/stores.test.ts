@@ -607,4 +607,39 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('custom presets export/import (1.1)', () => {
+    it('exports and imports valid presets, skips duplicates and invalid entries', async () => {
+      const { customs, exportPresetsJson, importPresetsJson, savePreset } = await import(
+        '../src/stores/customs'
+      );
+      customs.set([]);
+      savePreset({
+        id: 'custom.test1',
+        instrument_id: 'guitar',
+        name: { Custom: 'DADGAD' },
+        strings: [38, 45, 50, 55, 57, 62],
+        built_in: false,
+      });
+
+      const { json, count } = exportPresetsJson();
+      expect(count).toBe(1);
+      expect(json).toContain('DADGAD');
+
+      // Re-importing the same JSON skips duplicate DADGAD, imports a new one, ignores unknown instrument
+      const payload = JSON.stringify({
+        format: 'unisono-presets',
+        version: 1,
+        presets: [
+          { instrumentId: 'guitar', name: 'DADGAD', strings: [38, 45, 50, 55, 57, 62] },
+          { instrumentId: 'guitar', name: 'Open G', strings: [38, 43, 50, 55, 59, 62] },
+          { instrumentId: 'unknown_inst', name: 'Bad', strings: [40] },
+        ],
+      });
+      const added = importPresetsJson(payload, new Set(['guitar']));
+      expect(added).toBe(1);
+      expect(get(customs).length).toBe(2);
+      expect(importPresetsJson('not json', new Set(['guitar']))).toBeNull();
+    });
+  });
 });
