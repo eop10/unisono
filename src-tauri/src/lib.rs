@@ -49,6 +49,7 @@ pub fn run() {
             commands::get_presets,
             commands::save_preset,
             commands::delete_preset,
+            commands::export_presets_file,
             commands::get_input_devices,
             commands::set_input_device,
             commands::platform,

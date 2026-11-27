@@ -248,6 +248,21 @@ pub fn vibrate(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Сохранить экспортированные пользовательские строи в `unisono-presets.json`
+/// в папке «Загрузки» (fallback — каталог данных приложения) и вернуть путь.
+#[tauri::command]
+pub fn export_presets_file(json: String, app: AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().app_data_dir())
+        .map_err(|e| format!("папка загрузок недоступна: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("не удалось создать папку: {e}"))?;
+    let path = dir.join("unisono-presets.json");
+    std::fs::write(&path, json).map_err(|e| format!("не удалось записать файл: {e}"))?;
+    Ok(path.display().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

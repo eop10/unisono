@@ -77,6 +77,11 @@ export async function deletePreset(id: string): Promise<void> {
   await invoke('delete_preset', { id });
 }
 
+/** Сохранить JSON строёв в папку «Загрузки» (через Rust); возвращает путь к файлу. */
+export async function exportPresetsFile(json: string): Promise<string> {
+  return await invoke<string>('export_presets_file', { json });
+}
+
 /** Список доступных аудиовходов (desktop-only; на Android — пустой список). */
 export async function getInputDevices(): Promise<string[]> {
   return await invoke<string[]>('get_input_devices');

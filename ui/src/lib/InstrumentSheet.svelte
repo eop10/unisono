@@ -9,6 +9,7 @@
   import { customs, exportPresetsJson, importPresetsJson } from '../stores/customs';
   import { closeOverlay, openEditor } from '../stores/overlay';
   import { selectInstrument, selectTuning, settings } from '../stores/settings';
+  import { exportPresetsFile } from '../ipc/commands';
 
   const s = $derived($settings);
   const lang = $derived(s.language);
@@ -25,8 +26,16 @@
     if ($instruments.find((i) => i.id === id)?.kind === 'Chromatic') closeOverlay();
   }
 
-  function onExport() {
+  async function onExport() {
     const { json, count } = exportPresetsJson();
+    void navigator.clipboard?.writeText(json).catch(() => {});
+    try {
+      const savedPath = await exportPresetsFile(json);
+      transferMsg = `${t(lang, 'exported_count')} ${count} → ${savedPath}`;
+      return;
+    } catch {
+      // Вне Tauri (браузер) — fallback на скачивание blob.
+    }
     try {
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -36,9 +45,8 @@
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      // Игнорируем ограничения скачивания, дублируем в буфер обмена.
+      // Игнорируем ограничения скачивания, JSON уже в буфере обмена.
     }
-    void navigator.clipboard?.writeText(json).catch(() => {});
     transferMsg = `${t(lang, 'exported_count')} ${count}`;
   }
 
