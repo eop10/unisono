@@ -11,7 +11,7 @@
   import { fmtCents, fmtHz } from '../lib/format';
   import { t } from '../lib/i18n';
   import { noteLetter, noteOctave } from '../lib/notes';
-  import { playTone, playingTone, targetHzForNote } from '../lib/tone';
+  import { playTone, playingTone, targetHzForNote, temperamentOffsetCents } from '../lib/tone';
   import { instrumentName, tuningName } from '../lib/types';
   import { currentInstrument, currentTuning, setReference, settings, showStrings } from '../stores/settings';
   import { listening, manualStrings, selectString, startListening, toggleListening, tuner } from '../stores/tuner';
@@ -55,9 +55,11 @@
 
   const toneHz = $derived.by(() => {
     if ($manualStrings.length > 0 && tun !== null) {
-      const midi = tun.strings[$manualStrings[$manualStrings.length - 1]];
+      const idx = $manualStrings[$manualStrings.length - 1];
+      const midi = tun.strings[idx];
       if (midi !== undefined) {
-        return targetHzForNote(midi, s.referenceHz, s.capo);
+        const off = temperamentOffsetCents(s.temperament, tun.strings.length, idx);
+        return targetHzForNote(midi, s.referenceHz, s.capo, off);
       }
     }
     return st.targetHz ?? s.referenceHz;
@@ -78,11 +80,17 @@
   $effect(() => {
     if (!intonationOpen) return;
     if ((st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null && st.noteMidi !== null) {
-      if (openCents === null && st.kind === 'intune') {
+      const curOpenCents = untrack(() => openCents);
+      const curOpenMidi = untrack(() => openMidi);
+      if (curOpenCents === null && st.kind === 'intune') {
         openCents = st.cents;
         openMidi = st.noteMidi;
-      } else if (openCents !== null && openMidi !== null && st.noteMidi === openMidi + 12) {
-        fret12Cents = st.cents;
+      } else if (curOpenCents !== null && curOpenMidi !== null && st.f0 !== null) {
+        const expected12Hz = targetHzForNote(curOpenMidi + 12, s.referenceHz, 0);
+        const centsFrom12 = 1200 * Math.log2(st.f0 / expected12Hz);
+        if (Math.abs(centsFrom12) <= 60) {
+          fret12Cents = Math.round(centsFrom12 * 10) / 10;
+        }
       }
     }
   });
@@ -271,11 +279,14 @@
               openMidi = st.noteMidi;
             }}
           >{t(lang, 'save')}</button>
-        {:else if openCents !== null && fret12Cents === null && (st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null}
+        {:else if openCents !== null && openMidi !== null && fret12Cents === null && (st.kind === 'tracking' || st.kind === 'intune') && st.f0 !== null}
           <button
             class="listen"
             onclick={() => {
-              fret12Cents = st.cents;
+              if (st.f0 !== null && openMidi !== null) {
+                const expected12Hz = targetHzForNote(openMidi + 12, s.referenceHz, 0);
+                fret12Cents = Math.round(1200 * Math.log2(st.f0 / expected12Hz) * 10) / 10;
+              }
             }}
           >12</button>
         {/if}

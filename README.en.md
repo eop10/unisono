@@ -6,31 +6,31 @@
 
 <p align="center">
   Offline multi-instrument string &amp; chromatic tuner with custom tunings and adjustable A4.<br>
-  macOS · Android · Windows (planned) · Linux (planned)
+  macOS · Android · Windows · Linux
 </p>
 
 <p align="center">
-  <a href="https://github.com/eop10/unisono/releases/tag/v0.1.0"><img src="https://img.shields.io/github/v/release/eop10/unisono?style=flat-square&color=C8A253" alt="Release"></a>
+  <a href="https://github.com/eop10/unisono/releases/tag/v0.2.0"><img src="https://img.shields.io/github/v/release/eop10/unisono?style=flat-square&color=C8A253" alt="Release"></a>
   <a href="https://github.com/eop10/unisono/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/eop10/unisono/ci.yml?branch=main&style=flat-square" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android-lightgrey?style=flat-square" alt="Platforms">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square" alt="Platforms">
 </p>
 
 <p align="center">
   <a href="README.md">Русский</a> · <strong>English</strong>
 </p>
 
-> **Status:** **`0.1.0`** is released for **macOS** and **Android** (see [GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.1.0)).
-> Windows and Linux builds are planned for the next release.
+> **Status:** **`0.2.0`** is released for **macOS**, **Windows**, **Linux**, and **Android** (see [GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0)).
 
-## Download v0.1.0
+## Download v0.2.0
 
-| Platform | File | Notes |
+| Platform | Format | Notes |
 | --- | --- | --- |
-| macOS (Apple Silicon) | [`Unisono_0.1.0_aarch64.dmg`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_aarch64.dmg) | M1 / M2 / M3 / M4 |
-| macOS (Intel) | [`Unisono_0.1.0_x64.dmg`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_x64.dmg) | x86_64 |
-| Android 8.0+ | [`Unisono_0.1.0_android.apk`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_android.apk) | Universal APK (arm64-v8a / armeabi-v7a) |
-| Checksums | [`SHA256SUMS.txt`](https://github.com/eop10/unisono/releases/download/v0.1.0/SHA256SUMS.txt) | SHA-256 for all assets |
+| macOS (Apple Silicon / Intel) | `.dmg` (`aarch64`, `x86_64`) | [Download from GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Windows 10/11 x64 | NSIS `.exe` | [Download from GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Linux x86_64 | `.deb`, `.rpm`, `.AppImage`, `.pkg.tar.zst` | [Download from GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Android 8.0+ | `.apk` (arm64-v8a / armeabi-v7a) | [Download from GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Checksums | `SHA256SUMS.txt` | Included in `v0.2.0` release assets |
 
 ## What it is
 
@@ -38,8 +38,10 @@ A precision tuner for stringed instruments: Guitar (6/7), Bass (4/5), Ukulele, V
 
 ## Key Features
 
-- **Custom Tunings Builder:** Create, edit, and save your own tunings (e.g., `DADGAD`, `Drop C`, or any custom setup) for any instrument — stored locally across restarts.
-- **Adjustable Reference Pitch A4 (400–480 Hz, 0.1 Hz step):** Curated preset list with explanations, smooth slider, direct keyboard input, and instant `↑`/`↓` nudging.
+- **Custom Tunings Builder & Export/Import:** Create, edit, export, and import your own tunings in JSON (e.g., `DADGAD`, `Drop C`) for any instrument — stored locally across restarts.
+- **Adjustable Reference Pitch A4 (400–480 Hz, 0.1 Hz step):** Curated preset list, smooth slider, direct keyboard input, capture A4 from microphone, and instant `↑`/`↓` nudging.
+- **Reference Tone, Capo & Temperament:** Pure sine tone generator with automatic mic pause, capo transposition (`−6…+12` semitones), auto-advance to next string, and temperament modes (`Equal`, `Sweetened`, `Just Fifths`).
+- **12th-Fret Intonation Check & Stability Sparkline:** Compare open string vs. 12th fret for saddle adjustment hints, strobe gauge mode, and a live cents stability sparkline.
 - **Smart String & Unison Detection:** Hysteresis-backed auto-detection (including highlighting unison string pairs such as `E4+E4` on Balalaika) or manual string lock via tap / `1..8` keys.
 - **Decay Hold:** After a pluck, the dimmed note, needle, and cents remain held (~2.5 s) so you can read the result comfortably, while a new attack locks in immediately.
 - **Precision DSP & Instrument-Grade UI:** ±50/±5 cent vernier scale with brass zero mark, adaptive analysis window (4096 / 8192 / 16384 samples) for reliable tracking down to bass `B0`, configurable tolerance (`±2/3/5` cents), and sensitivity levels.

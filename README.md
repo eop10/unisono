@@ -6,31 +6,31 @@
 
 <p align="center">
   Мультиинструментальный тюнер с настраиваемой опорной частотой A4.<br>
-  macOS · Android · Windows (скоро) · Linux (скоро)
+  macOS · Android · Windows · Linux
 </p>
 
 <p align="center">
-  <a href="https://github.com/eop10/unisono/releases/tag/v0.1.0"><img src="https://img.shields.io/github/v/release/eop10/unisono?style=flat-square&color=C8A253" alt="Release"></a>
+  <a href="https://github.com/eop10/unisono/releases/tag/v0.2.0"><img src="https://img.shields.io/github/v/release/eop10/unisono?style=flat-square&color=C8A253" alt="Release"></a>
   <a href="https://github.com/eop10/unisono/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/eop10/unisono/ci.yml?branch=main&style=flat-square" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android-lightgrey?style=flat-square" alt="Platforms">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square" alt="Platforms">
 </p>
 
 <p align="center">
   <strong>Русский</strong> · <a href="README.en.md">English</a>
 </p>
 
-> **Статус:** выпущена версия **`0.1.0`** для **macOS** и **Android** (см. [GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.1.0)).
-> Сборки для Windows и Linux отложены до следующего релиза.
+> **Статус:** выпущена версия **`0.2.0`** для **macOS**, **Windows**, **Linux** и **Android** (см. [GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0)).
 
-## Скачать v0.1.0
+## Скачать v0.2.0
 
-| Платформа | Файл | Примечание |
+| Платформа | Формат | Примечание |
 | --- | --- | --- |
-| macOS (Apple Silicon) | [`Unisono_0.1.0_aarch64.dmg`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_aarch64.dmg) | M1 / M2 / M3 / M4 |
-| macOS (Intel) | [`Unisono_0.1.0_x64.dmg`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_x64.dmg) | x86_64 |
-| Android 8.0+ | [`Unisono_0.1.0_android.apk`](https://github.com/eop10/unisono/releases/download/v0.1.0/Unisono_0.1.0_android.apk) | Universal APK (arm64-v8a / armeabi-v7a) |
-| Контрольные суммы | [`SHA256SUMS.txt`](https://github.com/eop10/unisono/releases/download/v0.1.0/SHA256SUMS.txt) | SHA-256 всех сборок |
+| macOS (Apple Silicon / Intel) | `.dmg` (`aarch64`, `x86_64`) | [Скачать с GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Windows 10/11 x64 | NSIS `.exe` | [Скачать с GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Linux x86_64 | `.deb`, `.rpm`, `.AppImage`, `.pkg.tar.zst` | [Скачать с GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Android 8.0+ | `.apk` (arm64-v8a / armeabi-v7a) | [Скачать с GitHub Releases](https://github.com/eop10/unisono/releases/tag/v0.2.0) |
+| Контрольные суммы | `SHA256SUMS.txt` | В разделе Assets релиза `v0.2.0` |
 
 ## Что это
 
@@ -40,11 +40,16 @@
 
 ## Ключевые преимущества
 
-- **Свои строи (конструктор пресетов):** создавайте, редактируйте и сохраняйте собственные
-  строи (например, `DADGAD` или `Drop C`) для любого инструмента — всё хранится локально и
-  переживает перезапуск.
-- **Точная опорная частота A4 (400–480 Гц, шаг 0,1 Гц):** быстрый выбор из пресетов с
-  пояснениями, слайдер, точный ввод с клавиатуры и мгновенная подстройка клавишами `↑`/`↓`.
+- **Свои строи и экспорт/импорт:** создавайте, редактируйте, экспортируйте и импортируйте
+  собственные строи в JSON (например, `DADGAD` или `Drop C`) для любого инструмента — всё хранится
+  локально и переживает перезапуск.
+- **Точная опорная частота A4 (400–480 Гц, шаг 0,1 Гц):** быстрый выбор из пресетов, слайдер,
+  прямой ввод, калибровка с микрофона и подстройка клавишами `↑`/`↓`.
+- **Камертон, каподастр и темперация:** встроенный генератор чистого опорного тона с автопаузой
+  микрофона, сдвиг каподастра (`−6…+12` полутонов), автопереход к следующей струне и режимы
+  темперации (`Равномерная`, `Сладкий строй`, `Чистые квинты`).
+- **Проверка мензуры и график стабильности:** замер открытой струны и 12-го лада с подсказкой
+  регулировки седла, стробоскопическая шкала и скользящий мини-график отклонения.
 - **Умное определение струн и унисонов:** автоопределение с гистерезисом (включая подсветку
   обеих струн унисон-пары `E4+E4` на балалайке) или ручная фиксация цели тапом / клавишами `1..8`.
 - **Фиксация показаний при затухании:** после удара по струне результат мягко удерживается на

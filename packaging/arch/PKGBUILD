@@ -1,6 +1,6 @@
 # Maintainer: Egor Prisaznyj <egorprisiazhniy@gmail.com>
 pkgname=unisono-bin
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Offline multi-instrument string & chromatic tuner with custom tunings and adjustable A4"
 arch=('x86_64')

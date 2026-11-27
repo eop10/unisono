@@ -2,6 +2,7 @@
 //! Плавно нарастает и затухает без щелчков, автоматически ставит микрофон на паузу.
 
 import { get, writable } from 'svelte/store';
+import type { Temperament } from './types';
 import { listening, startListening, stopListening } from '../stores/tuner';
 
 export const playingTone = writable<number | null>(null);
@@ -11,6 +12,22 @@ let activeOsc: OscillatorNode | null = null;
 let activeGain: GainNode | null = null;
 let stopTimer: ReturnType<typeof setTimeout> | null = null;
 let resumeMicOnStop = false;
+
+export function temperamentOffsetCents(
+  temperament: Temperament,
+  len: number,
+  index: number,
+): number {
+  if (temperament === 'sweetened') {
+    if (len === 6) return [-2.0, -1.0, 0.0, -2.5, -1.0, 0.0][index] ?? 0;
+    if (index + 3 === len) return -2.0;
+    return 0;
+  }
+  if (temperament === 'just_fifths' && len === 4) {
+    return [-3.9, -2.0, 0.0, 2.0][index] ?? 0;
+  }
+  return 0;
+}
 
 export function targetHzForNote(
   midi: number,
