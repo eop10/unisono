@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Unisono
+Comment=Offline multi-instrument string and chromatic tuner
+Exec=unisono
+Icon=unisono
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Music;
+Keywords=tuner;guitar;music;pitch;
+StartupWMClass=unisono

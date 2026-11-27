@@ -81,6 +81,80 @@ jobs:
             target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
 
+  windows:
+    needs: [detect, rust, ui]
+    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.ui == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix ui && npm ci
+      - run: npm run tauri build -- --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: target/release/bundle/nsis/*.exe
+
+  linux:
+    needs: [detect, rust, ui]
+    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev patchelf rpm
+      - run: npm ci --prefix ui && npm ci
+      - name: Build Linux bundles (.deb, .rpm, .AppImage)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+        run: npm run tauri build -- --bundles deb,rpm,appimage
+      - name: Build Arch Linux package (.pkg.tar.zst)
+        run: |
+          mkdir -p packaging/arch/out && chmod 777 packaging/arch/out
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            -v "$PWD/packaging/arch/out:/out" \
+            archlinux:latest \
+            bash -euo pipefail -c '
+              pacman -Sy --noconfirm --needed base-devel zstd
+              useradd -m builder
+              mkdir -p /tmp/work/packaging /tmp/work/target/release /tmp/work/brand
+              cp -a /work/packaging/arch /tmp/work/packaging/arch
+              cp /work/target/release/app /tmp/work/target/release/app
+              cp -a /work/brand/png /tmp/work/brand/png
+              cp /work/LICENSE /tmp/work/LICENSE
+              chown -R builder:builder /tmp/work
+              su - builder -c "cd /tmp/work/packaging/arch && PKGDEST=/out makepkg -d --noconfirm"
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+            packaging/arch/out/*.pkg.tar.zst
+
   android:
     needs: [detect, rust, ui]
     if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.ui == 'true' && github.event_name == 'push'

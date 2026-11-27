@@ -120,8 +120,13 @@ npm run tauri android dev    # Android
 
 **Windows.** Запустить установщик → «Подробнее» → «Выполнить всё равно».
 
-**Linux.** `chmod +x Unisono-*.AppImage && ./Unisono-*.AppImage` или
-`sudo apt install ./Unisono_*.deb`.
+**Linux.**
+- Ubuntu / Debian: `sudo apt install ./Unisono_*.deb`
+- Fedora / openSUSE: `sudo dnf install ./Unisono-*.rpm`
+- Arch / Manjaro: `sudo pacman -U ./unisono-bin-*.pkg.tar.zst` (или [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD))
+- Универсальный AppImage: `chmod +x Unisono-*.AppImage && ./Unisono-*.AppImage`
+- Если на GPU NVIDIA + Wayland окно WebKitGTK открывается белым или не рисуется:
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1 unisono`
 
 **Android (sideload).**
 - Требования: Android 8.0+ (API 26+), архитектуры `arm64-v8a` или `armeabi-v7a`.

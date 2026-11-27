@@ -1,0 +1,24 @@
+# Maintainer: Egor Prisaznyj <egorprisiazhniy@gmail.com>
+pkgname=unisono-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Offline multi-instrument string & chromatic tuner with custom tunings and adjustable A4"
+arch=('x86_64')
+url="https://github.com/eop10/unisono"
+license=('Apache-2.0')
+depends=('webkit2gtk-4.1' 'gtk3' 'alsa-lib' 'libayatana-appindicator')
+provides=('unisono')
+conflicts=('unisono')
+
+package() {
+  local root_dir
+  root_dir="$(cd "$startdir/../.." && pwd)"
+
+  install -Dm755 "$root_dir/target/release/app" "$pkgdir/usr/bin/unisono"
+  install -Dm644 "$startdir/unisono.desktop" "$pkgdir/usr/share/applications/unisono.desktop"
+  install -Dm644 "$root_dir/brand/png/icon-32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/unisono.png"
+  install -Dm644 "$root_dir/brand/png/icon-128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/unisono.png"
+  install -Dm644 "$root_dir/brand/png/icon-256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/unisono.png"
+  install -Dm644 "$root_dir/brand/png/icon-512.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/unisono.png"
+  install -Dm644 "$root_dir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

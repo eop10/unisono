@@ -77,6 +77,16 @@ npm run tauri android build  # Android APK
 - macOS 14 and earlier: right-click `Unisono.app` → "Open" → "Open";
 - macOS 15+: *System Settings → Privacy & Security → Open Anyway*.
 
+**Windows.** Run the NSIS installer → "More info" → "Run anyway".
+
+**Linux.**
+- Ubuntu / Debian: `sudo apt install ./Unisono_*.deb`
+- Fedora / openSUSE: `sudo dnf install ./Unisono-*.rpm`
+- Arch / Manjaro: `sudo pacman -U ./unisono-bin-*.pkg.tar.zst` (or [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD))
+- Universal AppImage: `chmod +x Unisono-*.AppImage && ./Unisono-*.AppImage`
+- If WebKitGTK shows a blank window on NVIDIA + Wayland:
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1 unisono`
+
 **Android (sideload).**
 - Requires Android 8.0+ (API 26+), `arm64-v8a` or `armeabi-v7a`.
 - Allow installing unknown apps for your browser or file manager when prompted; tap "Install anyway" if Play Protect warns about an unknown publisher.
