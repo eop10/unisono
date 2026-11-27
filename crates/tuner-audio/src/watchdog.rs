@@ -386,6 +386,7 @@ mod tests {
                 manual_string: None,
                 low_range: false,
                 hold_ms: 1800,
+                ..Default::default()
             },
             48_000,
         )))

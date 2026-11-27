@@ -55,6 +55,7 @@ export type Language = 'ru' | 'en';
 export type Sensitivity = 'low' | 'normal' | 'high';
 export type Tolerance = 2 | 3 | 5;
 export type GateDb = -55 | -45 | -35;
+export type Temperament = 'equal' | 'sweetened' | 'just_fifths';
 
 export interface Settings {
   referenceHz: number;
@@ -65,6 +66,9 @@ export interface Settings {
   language: Language;
   bigType: boolean;
   strobe: boolean;
+  capo: number;
+  temperament: Temperament;
+  autoAdvance: boolean;
   toleranceCents: Tolerance;
   gateDb: GateDb;
   sensitivity: Sensitivity;

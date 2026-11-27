@@ -16,6 +16,8 @@ vi.mock('../src/ipc/commands', () => ({
   selectInstrument: vi.fn(async (_id: string) => {}),
   selectTuning: vi.fn(async (_tuning: unknown) => {}),
   selectString: vi.fn(async (_index: number | null) => {}),
+  setCapo: vi.fn(async (_semitones: number) => {}),
+  setTemperament: vi.fn(async (_t: string) => {}),
   setTolerance: vi.fn(async (_cents: number) => {}),
   setGateDb: vi.fn(async (_db: number) => {}),
   setSensitivity: vi.fn(async (_s: string) => {}),
@@ -641,6 +643,125 @@ describe('settings and presets survive restart (5.2–5.6)', () => {
       expect(added).toBe(1);
       expect(get(customs).length).toBe(2);
       expect(importPresetsJson('not json', new Set(['guitar']))).toBeNull();
+    });
+  });
+
+  describe('capo, temperament, autoAdvance, and tone', () => {
+    it('forwards capo and temperament updates to IPC', async () => {
+      const ipc = await import('../src/ipc/commands');
+      const { loadCatalog } = await import('../src/stores/catalog');
+      const { loadSettings, settings, updateSetting } = await import('../src/stores/settings');
+
+      await loadCatalog();
+      await loadSettings();
+
+      updateSetting('capo', 2);
+      updateSetting('temperament', 'sweetened');
+
+      expect(get(settings).capo).toBe(2);
+      expect(get(settings).temperament).toBe('sweetened');
+      expect(ipc.setCapo).toHaveBeenCalledWith(2);
+      expect(ipc.setTemperament).toHaveBeenCalledWith('sweetened');
+    });
+
+    it('auto-advances manual string when hitting intune and clears after last string', async () => {
+      const ipc = await import('../src/ipc/commands');
+      const { loadCatalog } = await import('../src/stores/catalog');
+      const { loadSettings, updateSetting } = await import('../src/stores/settings');
+      const { manualStrings, selectString, startListening, stopListening } = await import(
+        '../src/stores/tuner'
+      );
+
+      let activeChannel: Channel<TunerState> | null = null;
+      vi.mocked(ipc.startListening).mockImplementation(async (ch) => {
+        activeChannel = ch as Channel<TunerState>;
+      });
+
+      await loadCatalog();
+      await loadSettings();
+      updateSetting('autoAdvance', true);
+      await startListening();
+      selectString([0], 40);
+
+      activeChannel!.onmessage!({
+        kind: 'intune',
+        f0: 82.41,
+        cents: 0,
+        clarity: 0.99,
+        db: -15,
+        noteMidi: 40,
+        targetHz: 82.41,
+        stringIndices: [0],
+      });
+
+      expect(get(manualStrings)).toEqual([1]);
+      expect(ipc.selectString).toHaveBeenLastCalledWith(1);
+
+      selectString([5], 64);
+      activeChannel!.onmessage!({
+        kind: 'tracking',
+        f0: 329.0,
+        cents: -3,
+        clarity: 0.95,
+        db: -15,
+        noteMidi: 64,
+        targetHz: 329.63,
+        stringIndices: [5],
+      });
+      activeChannel!.onmessage!({
+        kind: 'intune',
+        f0: 329.63,
+        cents: 0,
+        clarity: 0.99,
+        db: -15,
+        noteMidi: 64,
+        targetHz: 329.63,
+        stringIndices: [5],
+      });
+
+      expect(get(manualStrings)).toEqual([]);
+      expect(ipc.selectString).toHaveBeenLastCalledWith(null);
+      await stopListening();
+    });
+
+    it('playTone pauses active mic listening and stopTone resumes it', async () => {
+      const { listening, startListening } = await import('../src/stores/tuner');
+      const { playTone, playingTone, stopTone } = await import('../src/lib/tone');
+
+      const mockGain = {
+        gain: { value: 0.1, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), cancelScheduledValues: vi.fn() },
+        connect: vi.fn(),
+      };
+      const mockOsc = {
+        type: 'sine',
+        frequency: { setValueAtTime: vi.fn() },
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+      };
+      vi.stubGlobal(
+        'AudioContext',
+        class {
+          currentTime = 0;
+          destination = {};
+          createOscillator = () => mockOsc;
+          createGain = () => mockGain;
+          close = async () => {};
+        },
+      );
+
+      await startListening();
+      expect(get(listening)).toBe(true);
+
+      await playTone(440, 5000);
+      expect(get(listening)).toBe(false);
+      expect(get(playingTone)).toBe(440);
+
+      await stopTone();
+      expect(get(playingTone)).toBeNull();
+      expect(get(listening)).toBe(true);
+
+      vi.unstubAllGlobals();
     });
   });
 });

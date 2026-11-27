@@ -4,7 +4,7 @@
   import { fmtHz } from '../lib/format';
   import { t } from '../lib/i18n';
   import { instrumentName, tuningName } from '../lib/types';
-  import type { GateDb, Language, Notation, Settings, Theme, Tolerance } from '../lib/types';
+  import type { GateDb, Language, Notation, Settings, Temperament, Theme, Tolerance } from '../lib/types';
   import {
     currentInstrument,
     currentTuning,
@@ -65,6 +65,44 @@
     <button class="btn ghost" onclick={() => openOverlay('instrument')}>
       {inst ? instrumentName(inst, lang) : ''}{tun ? ` · ${tuningName(tun, lang)}` : ''}
     </button>
+  </div>
+  <div class="row">
+    <span class="lbl">{t(lang, 'capo')}</span>
+    <span class="seg">
+      <button
+        aria-label="−"
+        disabled={s.capo <= -6}
+        onclick={() => set('capo', Math.max(-6, s.capo - 1))}
+      >−</button>
+      <span class="capo-val">{s.capo === 0 ? t(lang, 'capo_off') : (s.capo > 0 ? `+${s.capo}` : `${s.capo}`)}</span>
+      <button
+        aria-label="+"
+        disabled={s.capo >= 12}
+        onclick={() => set('capo', Math.min(12, s.capo + 1))}
+      >+</button>
+    </span>
+  </div>
+  <div class="row">
+    <span class="lbl">{t(lang, 'temperament')}</span>
+    <span class="seg">
+      {#each [['equal', 'temp_equal'], ['sweetened', 'temp_sweetened'], ['just_fifths', 'temp_just_fifths']] as [val, key]}
+        <button
+          class:on={s.temperament === val}
+          aria-pressed={s.temperament === val}
+          onclick={() => set('temperament', val as Temperament)}
+        >{t(lang, key as 'temp_equal')}</button>
+      {/each}
+    </span>
+  </div>
+  <div class="row">
+    <span class="lbl">{t(lang, 'auto_advance')}</span>
+    <button
+      class="switch"
+      role="switch"
+      aria-checked={s.autoAdvance}
+      aria-label={t(lang, 'auto_advance')}
+      onclick={() => set('autoAdvance', !s.autoAdvance)}
+    ></button>
   </div>
 
   <div class="sheet-section">{t(lang, 'section_display')}</div>

@@ -81,6 +81,61 @@ impl Sensitivity {
     }
 }
 
+/// Темперация / компенсация строя (1.3):
+/// - `Equal` — стандартная равномерная темперация 12-TET;
+/// - `Sweetened` — мягкая компенсация для ладовых инструментов;
+/// - `JustFifths` — чистые квинты (±2 цента на квинту для смычковых/мандолины).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Temperament {
+    #[default]
+    Equal,
+    Sweetened,
+    JustFifths,
+}
+
+fn temperament_offset_cents(t: Temperament, len: usize, index: usize) -> f64 {
+    match t {
+        Temperament::Equal => 0.0,
+        Temperament::Sweetened => {
+            // Классическая мягкая компенсация: чуть ниже терция/вторая-третья струны
+            // и басы, чтобы аккорды по всему грифу звучали чище.
+            if len == 6 {
+                [-2.0, -1.0, 0.0, -2.5, -1.0, 0.0][index]
+            } else if index + 3 == len {
+                -2.0
+            } else {
+                0.0
+            }
+        }
+        Temperament::JustFifths => {
+            if len == 4 {
+                [-3.9, -2.0, 0.0, 2.0][index]
+            } else {
+                0.0
+            }
+        }
+    }
+}
+
+fn transpose_midi(midi: u8, capo: i8) -> u8 {
+    (i16::from(midi) + i16::from(capo.clamp(-6, 12))).clamp(21, 108) as u8
+}
+
+fn target_hz_for(
+    midi: u8,
+    capo: i8,
+    temperament: Temperament,
+    len: usize,
+    index: usize,
+    a4: f64,
+) -> (u8, f64) {
+    let eff = transpose_midi(midi, capo);
+    let base = note::hz(eff, a4);
+    let off = temperament_offset_cents(temperament, len, index);
+    (eff, base * 2f64.powf(off / 1200.0))
+}
+
 /// Длительность удержания последнего показания при затухании струны по умолчанию (мс, #13).
 pub const DEFAULT_HOLD_MS: u32 = 2500;
 
@@ -98,6 +153,10 @@ pub struct EngineConfig {
     pub sensitivity: Sensitivity,
     /// Индекс выбранной струны; `None` — автоопределение.
     pub manual_string: Option<usize>,
+    /// Каподастр / транспозиция в полутонах (−6…+12; 0 — без сдвига).
+    pub capo: i8,
+    /// Темперация / компенсация строя.
+    pub temperament: Temperament,
     /// «Низкий диапазон» (5.3): окно 16384 в хроматическом режиме (4.2.3).
     pub low_range: bool,
     /// Удержание показания при затухании струны в мс (#13, дефолт 2500).
@@ -113,6 +172,8 @@ impl Default for EngineConfig {
             gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: None,
+            capo: 0,
+            temperament: Temperament::Equal,
             low_range: false,
             hold_ms: DEFAULT_HOLD_MS,
         }
@@ -151,8 +212,17 @@ impl StringMatcher {
     pub fn match_f0(&mut self, f0: f64, config: &EngineConfig) -> MatchOutcome {
         match (&config.tuning, config.manual_string) {
             (None, _) => self.chromatic(f0, config.a4),
-            (Some(tuning), Some(index)) => self.manual(f0, tuning, config.a4, index),
-            (Some(tuning), None) => self.auto(f0, tuning, config.a4),
+            (Some(tuning), Some(index)) => self.manual(
+                f0,
+                tuning,
+                config.a4,
+                config.capo,
+                config.temperament,
+                index,
+            ),
+            (Some(tuning), None) => {
+                self.auto(f0, tuning, config.a4, config.capo, config.temperament)
+            }
         }
     }
 
@@ -170,8 +240,16 @@ impl StringMatcher {
     }
 
     /// Ручной режим: выбранная струна; чужая нота гасит подсветку пары (4.7).
-    fn manual(&mut self, f0: f64, tuning: &Tuning, a4: f64, index: usize) -> MatchOutcome {
-        match self.string_outcome(f0, tuning, a4, index) {
+    fn manual(
+        &mut self,
+        f0: f64,
+        tuning: &Tuning,
+        a4: f64,
+        capo: i8,
+        temperament: Temperament,
+        index: usize,
+    ) -> MatchOutcome {
+        match self.string_outcome(f0, tuning, a4, capo, temperament, index) {
             Some(mut outcome) => {
                 if outcome.cents.abs() > FOREIGN_CENTS {
                     outcome.foreign = true;
@@ -181,30 +259,42 @@ impl StringMatcher {
                 outcome
             }
             // Индекс вне строя (строй сменился) — ведём себя как авто.
-            None => self.auto(f0, tuning, a4),
+            None => self.auto(f0, tuning, a4, capo, temperament),
         }
     }
 
     /// Автоопределение: ближайшая струна по |cents| с гистерезисом (4.3.6):
     /// не переключаемся при выигрыше новой < 10 центов; текущую покидаем,
     /// когда она ушла за ±60 центов. Унисон-пара отдаётся целиком (D-7).
-    fn auto(&mut self, f0: f64, tuning: &Tuning, a4: f64) -> MatchOutcome {
+    fn auto(
+        &mut self,
+        f0: f64,
+        tuning: &Tuning,
+        a4: f64,
+        capo: i8,
+        temperament: Temperament,
+    ) -> MatchOutcome {
         if tuning.strings.is_empty() {
             return self.chromatic(f0, a4);
         }
+        let len = tuning.strings.len();
         let dev: Vec<f64> = tuning
             .strings
             .iter()
-            .map(|&m| note::cents(f0, note::hz(m, a4)).abs())
+            .enumerate()
+            .map(|(i, &m)| {
+                let (_, t) = target_hz_for(m, capo, temperament, len, i, a4);
+                note::cents(f0, t).abs()
+            })
             .collect();
         let best = (0..dev.len())
             .min_by(|&i, &j| dev[i].total_cmp(&dev[j]))
             .expect("strings не пуста");
         let mut outcome = self
-            .string_outcome(f0, tuning, a4, best)
+            .string_outcome(f0, tuning, a4, capo, temperament, best)
             .expect("best < len");
         if let Some(current) = self.current {
-            if let Some(cur) = self.string_outcome(f0, tuning, a4, current) {
+            if let Some(cur) = self.string_outcome(f0, tuning, a4, capo, temperament, current) {
                 let wins = cur.cents.abs() - outcome.cents.abs();
                 let leave = cur.cents.abs() > SWITCH_LEAVE_CENTS;
                 if !(wins >= SWITCH_WIN_CENTS || leave) {
@@ -227,13 +317,16 @@ impl StringMatcher {
         f0: f64,
         tuning: &Tuning,
         a4: f64,
+        capo: i8,
+        temperament: Temperament,
         index: usize,
     ) -> Option<MatchOutcome> {
         let &midi = tuning.strings.get(index)?;
-        let target = note::hz(midi, a4);
+        let (eff_midi, target) =
+            target_hz_for(midi, capo, temperament, tuning.strings.len(), index, a4);
         Some(MatchOutcome {
             string_indices: tuning.string_indices(midi),
-            note_midi: midi,
+            note_midi: eff_midi,
             target_hz: target as f32,
             cents: note::cents(f0, target) as f32,
             foreign: false,
@@ -495,7 +588,17 @@ impl TunerEngine {
 /// фиксированный §4.2.1; чувствительность двигает `clarity_min` (§5.3).
 fn detector_config(config: &EngineConfig, fs: u32) -> DetectorConfig {
     let mut cfg = match &config.tuning {
-        Some(tuning) => DetectorConfig::for_tuning(tuning, config.a4, fs),
+        Some(tuning) => {
+            if config.capo == 0 {
+                DetectorConfig::for_tuning(tuning, config.a4, fs)
+            } else {
+                let mut shifted = tuning.clone();
+                for m in &mut shifted.strings {
+                    *m = transpose_midi(*m, config.capo);
+                }
+                DetectorConfig::for_tuning(&shifted, config.a4, fs)
+            }
+        }
         // Хроматика: 4096, с «Низким диапазоном» — 16384 (4.2.3, D-3).
         None => DetectorConfig::for_chromatic(config.low_range, fs),
     };
@@ -520,6 +623,8 @@ mod tests {
             gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: None,
+            capo: 0,
+            temperament: Temperament::Equal,
             low_range: false,
             hold_ms: DEFAULT_HOLD_MS,
         }
@@ -820,6 +925,8 @@ mod tests {
             gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
+            capo: 0,
+            temperament: Temperament::Equal,
             low_range: false,
             hold_ms: DEFAULT_HOLD_MS,
         };
@@ -843,6 +950,8 @@ mod tests {
             gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(1),
+            capo: 0,
+            temperament: Temperament::Equal,
             low_range: false,
             hold_ms: DEFAULT_HOLD_MS,
         };
@@ -869,6 +978,8 @@ mod tests {
             gate_db: GATE_DB,
             sensitivity: Sensitivity::Normal,
             manual_string: Some(0), // E2
+            capo: 0,
+            temperament: Temperament::Equal,
             low_range: false,
             hold_ms: DEFAULT_HOLD_MS,
         };
@@ -1023,5 +1134,32 @@ mod tests {
         // Выключение возвращает базовое окно.
         e.set_config(config(None, 440.0));
         assert_eq!(e.window(), 4096);
+    }
+
+    #[test]
+    fn capo_shifts_target_midi_and_hz() {
+        let mut matcher = StringMatcher::default();
+        let cfg = EngineConfig {
+            capo: 2,
+            manual_string: Some(0), // E2 (40) + 2 = F#2 (42)
+            ..config(Some(guitar()), 440.0)
+        };
+        let o = matcher.match_f0(note::hz(42, 440.0), &cfg);
+        assert_eq!(o.note_midi, 42);
+        assert_eq!(o.string_indices, vec![0]);
+        assert!(o.cents.abs() < 1e-4);
+    }
+
+    #[test]
+    fn sweetened_temperament_offsets_third_string() {
+        let mut matcher = StringMatcher::default();
+        let cfg = EngineConfig {
+            temperament: Temperament::Sweetened,
+            manual_string: Some(3), // 4-я от низа (G3, индекс 3 в 6-струнной гитаре: -2.5 цента)
+            ..config(Some(guitar()), 440.0)
+        };
+        // Если подаём точную 12-TET G3, при смещении -2.5 цента тюнер должен показать +2.5 цента выше.
+        let o = matcher.match_f0(note::hz(55, 440.0), &cfg);
+        assert!((o.cents - 2.5).abs() < 0.05, "cents = {}", o.cents);
     }
 }

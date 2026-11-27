@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::ipc::Channel;
 use tuner_audio::{AudioError, PlatformSource, StateSink, SupervisedCapture, WatchdogConfig};
-use tuner_core::engine::{Sensitivity, TunerEngine, TunerState};
+use tuner_core::engine::{Sensitivity, Temperament, TunerEngine, TunerState};
 use tuner_core::music::{InstrumentRegistry, Tuning};
 
 /// Минимальный интервал отправки состояния в WebView: кап ~60 Гц (3.6).
@@ -78,6 +78,8 @@ impl AppState {
                 gate_db: -45.0,
                 sensitivity: Sensitivity::Normal,
                 manual_string: None,
+                capo: 0,
+                temperament: Temperament::Equal,
                 low_range: false,
                 hold_ms: tuner_core::engine::DEFAULT_HOLD_MS,
             },
@@ -204,6 +206,17 @@ impl AppState {
     pub fn set_low_range(&self, low_range: bool) {
         self.with_config(|c| c.low_range = low_range);
     }
+
+    /// Каподастр / транспозиция в полутонах (-6..=12).
+    pub fn set_capo(&self, semitones: i8) {
+        let capo = semitones.clamp(-6, 12);
+        self.with_config(|c| c.capo = capo);
+    }
+
+    /// Темперация / компенсация строя.
+    pub fn set_temperament(&self, temperament: Temperament) {
+        self.with_config(|c| c.temperament = temperament);
+    }
 }
 
 impl Default for AppState {
@@ -238,6 +251,12 @@ pub struct SettingsDto {
     pub big_type: bool,
     #[serde(default)]
     pub strobe: bool,
+    #[serde(default)]
+    pub capo: i8,
+    #[serde(default)]
+    pub temperament: String,
+    #[serde(default)]
+    pub auto_advance: bool,
     pub onboarding_done: bool,
     #[serde(default)]
     pub input_device: Option<String>,
@@ -274,6 +293,13 @@ impl From<tuner_storage::Settings> for SettingsDto {
             low_range: s.low_range,
             big_type: s.big_type,
             strobe: s.strobe,
+            capo: s.capo,
+            temperament: match s.temperament {
+                tuner_storage::Temperament::Sweetened => "sweetened".into(),
+                tuner_storage::Temperament::JustFifths => "just_fifths".into(),
+                _ => "equal".into(),
+            },
+            auto_advance: s.auto_advance,
             onboarding_done: s.onboarding_done,
             input_device: s.input_device,
         }
@@ -313,6 +339,13 @@ impl From<SettingsDto> for tuner_storage::Settings {
             low_range: dto.low_range,
             big_type: dto.big_type,
             strobe: dto.strobe,
+            capo: dto.capo,
+            temperament: match dto.temperament.as_str() {
+                "sweetened" => tuner_storage::Temperament::Sweetened,
+                "just_fifths" => tuner_storage::Temperament::JustFifths,
+                _ => tuner_storage::Temperament::Equal,
+            },
+            auto_advance: dto.auto_advance,
             onboarding_done: dto.onboarding_done,
             input_device: dto.input_device,
         }

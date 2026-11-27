@@ -1,15 +1,17 @@
 <script lang="ts">
   //! Экран «Тюнер» (6.3): один экран — одно число; статус без дубля центов.
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import CentsGauge from './CentsGauge.svelte';
   import StrobeGauge from './StrobeGauge.svelte';
+  import StabilitySparkline from './StabilitySparkline.svelte';
   import LevelMeter from './LevelMeter.svelte';
   import StringChips from './StringChips.svelte';
   import { fmtCents, fmtHz } from '../lib/format';
   import { t } from '../lib/i18n';
   import { noteLetter, noteOctave } from '../lib/notes';
+  import { playTone, playingTone, targetHzForNote } from '../lib/tone';
   import { instrumentName, tuningName } from '../lib/types';
   import { currentInstrument, currentTuning, setReference, settings, showStrings } from '../stores/settings';
   import { listening, manualStrings, selectString, startListening, toggleListening, tuner } from '../stores/tuner';
@@ -24,13 +26,76 @@
   const st = $derived($tuner);
   const stringsVisible = $derived($showStrings && tun !== null);
 
-  const chipLabel = $derived(
+  const baseChipLabel = $derived(
     inst === null
       ? ''
       : inst.kind === 'Chromatic' || tun === null
         ? instrumentName(inst, lang)
         : `${instrumentName(inst, lang)} · ${tuningName(tun, lang)}`,
   );
+  const chipLabel = $derived(
+    s.capo === 0
+      ? baseChipLabel
+      : `${baseChipLabel} · Capo ${s.capo > 0 ? `+${s.capo}` : s.capo}`,
+  );
+
+  let centsHistory = $state<number[]>([]);
+  $effect(() => {
+    if ((st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null) {
+      const cents = st.cents;
+      const prev = untrack(() => centsHistory);
+      const next = [...prev, cents];
+      centsHistory = next.length > 40 ? next.slice(next.length - 40) : next;
+    } else if (st.kind === 'silent') {
+      if (untrack(() => centsHistory.length > 0)) {
+        centsHistory = [];
+      }
+    }
+  });
+
+  const toneHz = $derived.by(() => {
+    if ($manualStrings.length > 0 && tun !== null) {
+      const midi = tun.strings[$manualStrings[$manualStrings.length - 1]];
+      if (midi !== undefined) {
+        return targetHzForNote(midi, s.referenceHz, s.capo);
+      }
+    }
+    return st.targetHz ?? s.referenceHz;
+  });
+  const isTonePlaying = $derived($playingTone !== null);
+
+  let intonationOpen = $state(false);
+  let openMidi = $state<number | null>(null);
+  let openCents = $state<number | null>(null);
+  let fret12Cents = $state<number | null>(null);
+
+  function resetIntonation() {
+    openMidi = null;
+    openCents = null;
+    fret12Cents = null;
+  }
+
+  $effect(() => {
+    if (!intonationOpen) return;
+    if ((st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null && st.noteMidi !== null) {
+      if (openCents === null && st.kind === 'intune') {
+        openCents = st.cents;
+        openMidi = st.noteMidi;
+      } else if (openCents !== null && openMidi !== null && st.noteMidi === openMidi + 12) {
+        fret12Cents = st.cents;
+      }
+    }
+  });
+
+  const intonationHint = $derived.by(() => {
+    if (openCents === null) return t(lang, 'intonation_open_hint');
+    if (fret12Cents === null) return t(lang, 'intonation_12_hint');
+    const delta = fret12Cents - openCents;
+    if (Math.abs(delta) <= s.toleranceCents) return t(lang, 'intonation_ok');
+    return delta > 0
+      ? `${t(lang, 'intonation_saddle_back')} (${fmtCents(delta)})`
+      : `${t(lang, 'intonation_saddle_fwd')} (${fmtCents(delta)})`;
+  });
 
   const idle = $derived(st.kind === 'silent' || st.kind === 'error' || st.kind === 'nopermission');
   const inTune = $derived(st.kind === 'intune');
@@ -180,6 +245,9 @@
           {t(lang, 'cents')}
         </span>
       </div>
+      {#if centsHistory.length >= 2 && !idle}
+        <StabilitySparkline history={centsHistory} toleranceCents={s.toleranceCents} />
+      {/if}
     </div>
 
     {#if stringsVisible && tun}
@@ -192,6 +260,29 @@
       />
     {/if}
 
+    {#if intonationOpen}
+      <div class="intonation-bar">
+        <span class="intonation-hint">{intonationHint}</span>
+        {#if openCents === null && (st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null && st.noteMidi !== null}
+          <button
+            class="btn ghost"
+            onclick={() => {
+              openCents = st.cents;
+              openMidi = st.noteMidi;
+            }}
+          >{t(lang, 'save')}</button>
+        {:else if openCents !== null && fret12Cents === null && (st.kind === 'tracking' || st.kind === 'intune') && st.cents !== null}
+          <button
+            class="btn ghost"
+            onclick={() => {
+              fret12Cents = st.cents;
+            }}
+          >12</button>
+        {/if}
+        <button class="btn ghost" onclick={resetIntonation}>{t(lang, 'intonation_reset')}</button>
+      </div>
+    {/if}
+
     <div class="bottom">
       <button
         class="listen"
@@ -200,6 +291,23 @@
         aria-label={t(lang, 'aria_listen')}
         onclick={() => void toggleListening()}
       >{$listening ? t(lang, 'stop') : t(lang, 'listen')}</button>
+      <button
+        class="btn ghost"
+        class:on={isTonePlaying}
+        aria-pressed={isTonePlaying}
+        onclick={() => void playTone(toneHz)}
+      >{isTonePlaying ? t(lang, 'tone_stop') : t(lang, 'tone_play')}</button>
+      {#if stringsVisible}
+        <button
+          class="btn ghost"
+          class:on={intonationOpen}
+          aria-pressed={intonationOpen}
+          onclick={() => {
+            intonationOpen = !intonationOpen;
+            if (!intonationOpen) resetIntonation();
+          }}
+        >{t(lang, 'intonation')}</button>
+      {/if}
       <!-- Движок шлёт уровень даже в «Слушаю…» — индикатор живой (ФТ-16). -->
       <LevelMeter db={st.db} {lang} />
       <div class="status" class:idle={st.kind === 'silent' || st.kind === 'uncertain'} class:tune={inTune}>
@@ -208,3 +316,21 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .intonation-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: var(--surface-2, rgba(128, 128, 128, 0.1));
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .intonation-hint {
+    font-weight: 500;
+    color: var(--ink-1);
+  }
+</style>

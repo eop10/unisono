@@ -78,6 +78,17 @@ pub enum Sensitivity {
     Unknown,
 }
 
+/// Темперация строя (§1.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum Temperament {
+    #[default]
+    Equal,
+    Sweetened,
+    JustFifths,
+    #[serde(other)]
+    Unknown,
+}
+
 /// Настройки (§5.3). Полные `snake_case`-имена — это формат файла.
 /// `#[serde(default)]` обязателен: при добавлении поля старый файл читается.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
@@ -104,6 +115,9 @@ pub struct Settings {
     pub low_range: bool,
     pub big_type: bool,
     pub strobe: bool,
+    pub capo: i8,
+    pub temperament: Temperament,
+    pub auto_advance: bool,
     pub onboarding_done: bool,
     pub input_device: Option<String>,
 }
@@ -126,6 +140,9 @@ impl Default for Settings {
             low_range: false,
             big_type: false,
             strobe: false,
+            capo: 0,
+            temperament: Temperament::Equal,
+            auto_advance: false,
             onboarding_done: false,
             input_device: None,
         }
@@ -161,6 +178,10 @@ impl Settings {
         if self.sensitivity == Sensitivity::Unknown {
             self.sensitivity = Sensitivity::Normal;
         }
+        if self.temperament == Temperament::Unknown {
+            self.temperament = Temperament::Equal;
+        }
+        self.capo = self.capo.clamp(-6, 12);
 
         // Инструмент: известный из реестра или хроматика, иначе гитара.
         let known = |id: &str| id == "chromatic" || INSTRUMENTS.iter().any(|i| i.id == id);

@@ -15,6 +15,8 @@ vi.mock('../src/ipc/commands', () => ({
   selectInstrument: vi.fn(async () => {}),
   selectTuning: vi.fn(async () => {}),
   selectString: vi.fn(async () => {}),
+  setCapo: vi.fn(async () => {}),
+  setTemperament: vi.fn(async () => {}),
   setTolerance: vi.fn(async () => {}),
   setGateDb: vi.fn(async () => {}),
   setSensitivity: vi.fn(async () => {}),
@@ -442,5 +444,33 @@ describe('strobe mode (1.1)', () => {
     expect(sw.getAttribute('aria-checked')).toBe('true');
     await fireEvent.click(sw);
     expect(get(settings).strobe).toBe(false);
+  });
+});
+
+describe('capo, temperament, autoAdvance UI', () => {
+  it('shows Capo badge on TunerScreen and updates controls in SettingsSheet', async () => {
+    settings.update((s) => ({ ...s, capo: 2, temperament: 'equal', autoAdvance: false }));
+    const screen = render(TunerScreen);
+    await tick();
+    expect(screen.container.textContent).toContain('Capo +2');
+    screen.unmount();
+
+    const sheet = render(SettingsSheet);
+    await tick();
+    await tick();
+
+    const plus = sheet.getByRole('button', { name: '+' });
+    await fireEvent.click(plus);
+    expect(get(settings).capo).toBe(3);
+    expect(ipc.setCapo).toHaveBeenCalledWith(3);
+
+    const sweetened = sheet.getByRole('button', { name: /сладкий строй/i });
+    await fireEvent.click(sweetened);
+    expect(get(settings).temperament).toBe('sweetened');
+    expect(ipc.setTemperament).toHaveBeenCalledWith('sweetened');
+
+    const autoAdv = sheet.getByRole('switch', { name: /автопереход струны/i });
+    await fireEvent.click(autoAdv);
+    expect(get(settings).autoAdvance).toBe(true);
   });
 });

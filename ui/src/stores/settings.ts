@@ -5,11 +5,13 @@
 
 import { derived, get, writable } from 'svelte/store';
 import { clampReference } from '../lib/format';
-import type { Instrument, Sensitivity, Settings, Tuning } from '../lib/types';
+import type { Instrument, Sensitivity, Settings, Temperament, Tuning } from '../lib/types';
 import {
   selectInstrument as ipcSelectInstrument,
   selectTuning as ipcSelectTuning,
   selectString as ipcSelectString,
+  setCapo as ipcSetCapo,
+  setTemperament as ipcSetTemperament,
   setInputDevice as ipcSetInputDevice,
   setLowRange as ipcSetLowRange,
   setReference as ipcSetReference,
@@ -34,6 +36,9 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'ru',
   bigType: false,
   strobe: false,
+  capo: 0,
+  temperament: 'equal',
+  autoAdvance: false,
   toleranceCents: 3,
   gateDb: -45,
   sensitivity: 'normal',
@@ -123,6 +128,8 @@ export async function applySettingsToEngine(): Promise<void> {
     ipcSetGateDb(s.gateDb),
     ipcSetSensitivity(s.sensitivity),
     ipcSetLowRange(s.lowRange),
+    ipcSetCapo(s.capo),
+    ipcSetTemperament(s.temperament),
     ipcSetInputDevice(s.inputDevice),
     ipcSelectString(null),
   ]);
@@ -186,6 +193,12 @@ export function updateSetting<K extends keyof Settings>(key: K, value: Settings[
     case 'lowRange':
       void ipcSetLowRange(value as boolean);
       break;
+    case 'capo':
+      void ipcSetCapo(value as number);
+      break;
+    case 'temperament':
+      void ipcSetTemperament(value as Temperament);
+      break;
     case 'inputDevice':
       void ipcSetInputDevice(value as string | null);
       break;
@@ -206,6 +219,8 @@ export function resetSettings(): void {
   void ipcSetGateDb(DEFAULT_SETTINGS.gateDb);
   void ipcSetSensitivity(DEFAULT_SETTINGS.sensitivity);
   void ipcSetLowRange(DEFAULT_SETTINGS.lowRange);
+  void ipcSetCapo(DEFAULT_SETTINGS.capo);
+  void ipcSetTemperament(DEFAULT_SETTINGS.temperament);
   void ipcSetInputDevice(null);
   manualStrings.set([]);
   void ipcSelectString(null);

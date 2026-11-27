@@ -4,7 +4,7 @@
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tuner_audio::AudioError;
-use tuner_core::engine::{Sensitivity, TunerState};
+use tuner_core::engine::{Sensitivity, Temperament, TunerState};
 use tuner_core::music::InstrumentRegistry;
 
 use crate::bridge::{AppState, TuningSpec};
@@ -103,6 +103,18 @@ pub fn set_sensitivity(sensitivity: Sensitivity, state: State<'_, AppState>) {
 #[tauri::command]
 pub fn set_low_range(low_range: bool, state: State<'_, AppState>) {
     state.set_low_range(low_range);
+}
+
+/// Каподастр / транспозиция в полутонах (-6..=12).
+#[tauri::command]
+pub fn set_capo(semitones: i8, state: State<'_, AppState>) {
+    state.set_capo(semitones);
+}
+
+/// Темперация / компенсация строя.
+#[tauri::command]
+pub fn set_temperament(temperament: Temperament, state: State<'_, AppState>) {
+    state.set_temperament(temperament);
 }
 
 /// Настройки, переживающие перезапуск (5.2–5.3): файл или дефолт.

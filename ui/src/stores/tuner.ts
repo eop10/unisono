@@ -16,7 +16,7 @@ import {
   vibrate,
   type Platform,
 } from '../ipc/commands';
-import { settings } from './settings';
+import { currentTuning, settings } from './settings';
 
 const SILENT: TunerState = {
   kind: 'silent',
@@ -152,14 +152,27 @@ export async function startListening(): Promise<void> {
         void keepScreenOn(false);
       } else if (state.kind === 'intune' && prevKind !== 'intune') {
         const now = Date.now();
+        const s = get(settings);
         if (now - lastVibrateAt >= 1000) {
           lastVibrateAt = now;
-          const s = get(settings);
           if (s.haptics) {
             void vibrate();
           }
           if (s.sound) {
             playInTuneSound();
+          }
+        }
+        if (s.autoAdvance) {
+          const locked = get(manualStrings);
+          const tuning = get(currentTuning);
+          if (locked.length > 0 && tuning) {
+            const currentIdx = locked[locked.length - 1];
+            const nextIdx = currentIdx + 1;
+            if (nextIdx < tuning.strings.length) {
+              void selectString([nextIdx], tuning.strings[nextIdx]);
+            } else {
+              void selectString([], 0);
+            }
           }
         }
       }

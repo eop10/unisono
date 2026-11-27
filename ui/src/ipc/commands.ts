@@ -2,7 +2,7 @@
 //! serde-вывода ядра; аудио-логики в JS нет.
 
 import { Channel, invoke } from '@tauri-apps/api/core';
-import type { Catalog, Sensitivity, Settings, TunerState, Tuning } from '../lib/types';
+import type { Catalog, Sensitivity, Settings, Temperament, TunerState, Tuning } from '../lib/types';
 
 /** Пользовательский строй для IPC (§5.6): имя — плоская строка. */
 export interface PresetDto {
@@ -57,6 +57,14 @@ export async function setSensitivity(sensitivity: Sensitivity): Promise<void> {
 /** «Низкий диапазон» (5.3): окно 16384 в хроматике. */
 export async function setLowRange(lowRange: boolean): Promise<void> {
   await invoke('set_low_range', { lowRange });
+}
+
+export async function setCapo(semitones: number): Promise<void> {
+  await invoke('set_capo', { semitones });
+}
+
+export async function setTemperament(temperament: Temperament): Promise<void> {
+  await invoke('set_temperament', { temperament });
 }
 
 /** Настройки, переживающие перезапуск (5.2–5.3). */

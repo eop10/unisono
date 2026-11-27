@@ -45,6 +45,8 @@ pub fn run() {
             commands::set_gate_db,
             commands::set_sensitivity,
             commands::set_low_range,
+            commands::set_capo,
+            commands::set_temperament,
             commands::get_settings,
             commands::save_settings,
             commands::get_presets,
