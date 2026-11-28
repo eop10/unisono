@@ -175,9 +175,20 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.1.10909125"
       - run: npm ci --prefix ui && npm ci
       - name: Build Android APK
+        env:
+          UNISONO_KEYSTORE_B64: ${{ secrets.UNISONO_KEYSTORE_B64 }}
+          UNISONO_STORE_PASSWORD: ${{ secrets.UNISONO_STORE_PASSWORD }}
+          UNISONO_KEY_ALIAS: ${{ secrets.UNISONO_KEY_ALIAS }}
+          UNISONO_KEY_PASSWORD: ${{ secrets.UNISONO_KEY_PASSWORD }}
         run: |
           export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-          npm run tauri android build -- --apk --target aarch64 --target armv7 --debug
+          if [ -n "${UNISONO_KEYSTORE_B64:-}" ] && [ -n "${UNISONO_STORE_PASSWORD:-}" ] && [ -n "${UNISONO_KEY_ALIAS:-}" ] && [ -n "${UNISONO_KEY_PASSWORD:-}" ]; then
+            echo "$UNISONO_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/unisono-release.keystore"
+            export UNISONO_KEYSTORE="$RUNNER_TEMP/unisono-release.keystore"
+            npm run tauri android build -- --apk --target aarch64 --target armv7
+          else
+            npm run tauri android build -- --apk --target aarch64 --target armv7 --debug
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: apk
@@ -196,8 +207,16 @@ jobs:
           path: dist-release
       - name: Flatten release assets & generate SHA256SUMS
         run: |
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
           mkdir -p release-assets
-          find dist-release -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.pkg.tar.zst' -o -name '*.apk' \) -exec cp -v {} release-assets/ \;
+          find dist-release -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.pkg.tar.zst' \) -exec cp -v {} release-assets/ \;
+          RELEASE_APK=$(find dist-release -type f -name '*release*.apk' ! -name '*unsigned*' | head -n 1 || true)
+          if [ -n "$RELEASE_APK" ]; then
+            cp -v "$RELEASE_APK" "release-assets/Unisono_${VER}_android.apk"
+          else
+            find dist-release -type f -name '*.apk' -exec cp -v {} release-assets/ \;
+          fi
           (cd release-assets && sha256sum * > SHA256SUMS.txt)
           ls -lh release-assets
       - name: Publish GitHub Release
