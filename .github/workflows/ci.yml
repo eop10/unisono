@@ -158,7 +158,7 @@ jobs:
 
   android:
     needs: [detect, rust, ui]
-    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.ui == 'true' && github.event_name == 'push'
+    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.ui == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
